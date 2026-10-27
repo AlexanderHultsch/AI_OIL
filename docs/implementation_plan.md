@@ -19,6 +19,12 @@ Work order for building AI_OIL against `docs/specification.md` v0.2. Each step i
 | Secrets | `keyring` only; tests use an in-memory keyring backend |
 | Lint | ruff, line length 110, rules E, F, I, UP, B |
 
+## Status (27 October 2026)
+
+**Phase 1 is complete.** 1,759 tests pass, lint and format are clean, and the phase-1 end-to-end test (`tests/e2e/test_p1.py`) covers the exit criteria with fixture-backed connectors. The real acceptance run on the target laptop (`oil connector check --live`, then a first real `oil sync`) is still open.
+
+Steps 5, 8, 13, 17 and 18 were split into sub-steps during execution (5a–c, 8a–c, 13a–b, 17a–b, 18a–b); step 21b fixed a missing credential store found in a manual run.
+
 ## Steps
 
 | # | Step | Verification |

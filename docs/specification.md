@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Version** | 0.2 — approved for implementation |
+| **Version** | 0.3 — phase 1 implemented |
 | **Date** | 27 October 2026 |
 | **Owner** | Alex Hultsch |
 | **Basis** | Requirements interview of 26 October 2026 (Appendix A); implementation decisions of 27 October 2026 (Appendix C) |
@@ -512,7 +512,7 @@ Raw originals are stored gzip-compressed under `blobs/<first two hex chars>/<sha
 
 | Table | Purpose |
 |---|---|
-| `search_doc` | SQLite FTS5 index with one document per issue (summary + description + acceptance criteria), comment, **latest** version per source object, and source entry. Maintained in the same transaction as the row it mirrors |
+| `search_doc` | SQLite FTS5 index with one document per issue (summary + description + acceptance criteria), comment, **latest** version per source object, and latest revision per source entry. Maintained by SQLite triggers (migration 0002) in the same transaction as the row it mirrors |
 | `saved_filter` | A named OQL query with its column set and a favourite flag |
 
 ### 5.16 Sizing
@@ -726,21 +726,22 @@ The CLI is the only interface in P1 and remains available afterwards for scripti
 
 | Command | Does |
 |---|---|
-| `oil init` | Creates the database and config, asks for "me" (name, email addresses, Atlassian accountId) |
-| `oil connector add outlook\|jira\|confluence\|sharepoint` / `list` / `check [--live]` / `enable` / `disable` | Manage connector instances; secrets go to Credential Manager |
-| `oil project add KEY "Name"` / `list` | Projects |
-| `oil issue create -p OIL -s "Summary" -d "Description" [--priority P2] [--assignee …] [--due 2026-11-15] [--label …]` | Create; prints the key |
-| `oil issue edit OIL-42 --status Blocked --blocked-reason "…"` | Any field change (history written) |
-| `oil issue show OIL-42 [--sources] [--history]` | Detail view including the source dictionary |
-| `oil comment OIL-42 "text"` | Add a comment |
-| `oil link OIL-42 <reference>` | Link any source: URL, Jira key, path, `--outlook-selected`, `--outlook-subject "…"`, `--note "title" --text "…"` |
+| `oil init --name … --email … [--atlassian-account-id …]` | Creates the data folder, the database and "me" with identities |
+| `oil connector add TYPE NAME [--setting K=V]… [--token \| --token-stdin]` / `set NAME …` / `list` / `check [NAME] [--live]` / `enable NAME` / `disable NAME` | Manage connector instances; settings are validated by the connector; secrets go to Credential Manager only. `check --live` is the read-only acceptance test against the real systems (CON-6) |
+| `oil project add KEY "Name"` / `list`; `oil component add PROJECT NAME` / `list PROJECT` | Projects and components |
+| `oil issue create -p OIL -s "Summary" -d "Description" [--type …] [--parent …] [--priority P2] [--assignee …] [--due 2026-11-15] [--acceptance …] [--label …] [--component …]` | Create; prints the key |
+| `oil issue edit OIL-42 [field options] [--add-label …] [--status Blocked --reason "…"]` | Any field change, labels, components and status in one change; history written |
+| `oil issue show OIL-42 [--history]` | Detail view including links, sources and comments |
+| `oil comment add OIL-42 "text"` / `edit ID "text"` / `delete ID` | Comments (DM-19) |
+| `oil link OIL-42 <reference> [--role …] [--connector NAME]`, `--outlook-selected`, `--outlook-subject "…" [--pick N]`, `--title "…" --text "…"` (note) | Link any source; the first fetch runs immediately (SYNC-9) |
 | `oil unlink OIL-42 <source-id>` | Unlink (DM-57) |
-| `oil issue-link OIL-42 blocks OIL-50` | Typed issue links |
-| `oil sync [OIL-42 \| --source ID \| --connector NAME \| --all] [--include-done]` | On-demand sync with summary |
-| `oil search '<OQL>'` | Query; table output, `--json` for scripts |
-| `oil source show ID [--versions] [--diff V1 V2]` | Inspect stored content and diffs |
-| `oil person list` / `merge A B` | People |
-| `oil backup [--to PATH]` | Online backup (NFR-8) |
+| `oil note edit ID --text "…" [--title …]` | Edit a manual note (new version) |
+| `oil issue-link OIL-42 blocks OIL-50 [--remove]` | Typed issue links |
+| `oil sync [OIL-42 \| --source ID \| --connector NAME \| --all] [--include-done]` | On-demand sync with summary; triggers the daily backup |
+| `oil search '<OQL>' [--json] [--limit N]` | Query; table output, `--json` for scripts |
+| `oil source show ID [--versions] [--entries] [--diff V1 V2]` | Inspect stored content and diffs |
+| `oil person list [--all]` / `add NAME …` / `merge A B` | People |
+| `oil backup [--to PATH]` / `oil restore PATH --yes` | Online backup and restore (NFR-8) |
 
 ---
 
@@ -1005,3 +1006,7 @@ Classes C–E do not exist before P5.
 | 4 | Teams chat | Deferred, not in the current plan |
 | 5 | Dashboard charts | Server-side inline SVG |
 | 6 | Open items OI-2, OI-4 to OI-8, OI-10 | The proposals in chapter 16 are adopted |
+| 7 | Search index | Maintained by SQLite triggers (migration 0002), not by application code; document rowid = kind code × 10¹² + row id |
+| 8 | Write transactions | Every transaction starts with `BEGIN IMMEDIATE`, so concurrent writers wait instead of failing |
+| 9 | Versions | Only content decides (DM-48): volatile fields such as Jira `updated` or the Confluence version number are kept out of the content hash |
+| 10 | Connector isolation | A connector that cannot start is skipped when references are matched (CON-3); naming it with `--connector` reports why |

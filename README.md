@@ -6,12 +6,28 @@ Single user, local on a Windows laptop, Python, SQLite.
 
 ## Status
 
-Specification phase. Nothing is built yet.
+**Phase 1 (data foundation) is implemented**: data model, Manual / Outlook / Jira / Confluence / SharePoint connectors, on-demand sync with versioning, full-text search and the OQL query language, CLI, backup. Phases 2–5 are not started.
+
+Quick start (Windows, Python 3.12, classic Outlook):
+
+```
+python -m venv .venv && .venv\Scripts\pip install -e .[dev]
+oil init --name "Your Name" --email you@example.com
+oil project add OIL "Open issues"
+oil connector add outlook Outlook
+oil connector add jira Jira --setting base_url=https://acme.atlassian.net --setting email=you@example.com --token
+oil connector check --live
+oil issue create -p OIL -s "Clarify inductor lead time" -d "Supplier quoted 26 weeks"
+oil link OIL-1 --outlook-selected
+oil sync --all
+oil search 'text ~ "lead time" AND statusCategory != Done'
+```
 
 | Document | Content |
 |---|---|
-| [`docs/specification.md`](docs/specification.md) | The specification (v0.1, draft for review). Start with chapter 5, the data model |
+| [`docs/specification.md`](docs/specification.md) | The specification (v0.3). Chapter 9 lists every CLI command |
 | [`src/ai_oil/db/sql/0001_baseline.sql`](src/ai_oil/db/sql/0001_baseline.sql) | The data model as an executable SQLite schema |
+| [`docs/implementation_plan.md`](docs/implementation_plan.md) | Conventions, work order and status |
 
 ## Phases
 
