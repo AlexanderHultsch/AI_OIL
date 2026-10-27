@@ -5,9 +5,10 @@ import sys
 from pathlib import Path
 
 from ai_oil import __version__
+from ai_oil.cli import init as init_command
 from ai_oil.errors import AiOilError
 
-COMMAND_MODULES: list = []
+COMMAND_MODULES: list = [init_command]
 
 
 def build_parser() -> argparse.ArgumentParser:

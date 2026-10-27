@@ -48,3 +48,9 @@ def engine(tmp_path) -> Iterator[sqlalchemy.Engine]:
     upgrade(db_engine)
     yield db_engine
     db_engine.dispose()
+
+
+@pytest.fixture
+def conn(engine: sqlalchemy.Engine) -> Iterator[sqlalchemy.Connection]:
+    with engine.begin() as connection:
+        yield connection
