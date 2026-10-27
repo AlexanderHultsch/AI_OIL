@@ -44,7 +44,7 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OP-22 | `update_project` cannot clear lead or description | Minor | Add explicit clearing | accepted |
 | OP-23 | `oil issue show` does not display `snoozed_until` | Snooze arrives in P4 | Add the line in P4 | open |
 | OP-24 | FTS snippet comes from the body; a title-only match shows no highlight | Cosmetic | Snippet over both columns | accepted |
-| OP-25 | Full test suite takes about 70 s (the OQL compiler fixture rebuilds the database per test) | Slower feedback | Module-scoped fixture for the compiler tests | open |
+| OP-25 | Full test suite took about 120 s | Slower feedback | Template-and-copy fixtures (step 25c): about 56 s, every test isolated, no assertion changed; the SRCH-9 performance test accounts for about 20 s of the rest | closed |
 | OP-26 | SharePoint URLs with `..` segments are normalised but not blocked | Local single-user tool | Reject `..` | accepted |
 | OP-27 | No `CoUninitialize` for Outlook COM threads | None known | Watch during OP-2 | accepted |
 | OP-28 | Starlette warns that `httpx` for its TestClient is deprecated in favour of `httpx2` | Test-only warning | Switch the dev dependency when httpx2 is stable | accepted |

@@ -1,11 +1,13 @@
 import re
 from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
 import sqlalchemy
 
+from ai_oil.cli.main import main
 from ai_oil.config import load_config
 from ai_oil.connectors.outlook import OutlookConnector
 from ai_oil.connectors.outlook_session import MailAddress, MailRecord
@@ -93,11 +95,34 @@ def add_connector(home):
     return add
 
 
+def seed_issue(path: Path) -> None:
+    assert main(["--home", str(path), "project", "add", "OIL", "Open issues"]) == 0
+    assert (
+        main(
+            [
+                "--home",
+                str(path),
+                "issue",
+                "create",
+                "-p",
+                "OIL",
+                "-s",
+                "Fit the filter",
+                "-d",
+                "Needs a part",
+            ]
+        )
+        == 0
+    )
+
+
 @pytest.fixture
-def issue(oil, capsys: pytest.CaptureFixture[str]) -> str:
-    assert oil("project", "add", "OIL", "Open issues") == 0
-    assert oil("issue", "create", "-p", "OIL", "-s", "Fit the filter", "-d", "Needs a part") == 0
-    capsys.readouterr()
+def home_seed(request: pytest.FixtureRequest):
+    return ("link-sync-issue", seed_issue) if "issue" in request.fixturenames else None
+
+
+@pytest.fixture
+def issue(home) -> str:
     return "OIL-1"
 
 

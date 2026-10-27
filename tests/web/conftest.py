@@ -1,3 +1,4 @@
+import shutil
 from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
@@ -6,24 +7,26 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from starlette.templating import Jinja2Templates
 
-from ai_oil.cli.main import main
 from ai_oil.config import load_config
 from ai_oil.db.engine import create_db_engine
 from ai_oil.domain import issues, people, projects
 from ai_oil.sources import linking, store
 from ai_oil.sources.model import ObjectMeta
-from ai_oil.web.app import create_app
+from ai_oil.web.app import TEMPLATES_DIR, create_app
 
 PORT = 8765
 
 
-@pytest.fixture
-def web_home(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
+@pytest.fixture(scope="session")
+def shared_templates() -> Jinja2Templates:
+    """One template environment for all apps of the session, so templates compile once, not per test."""
+    return Jinja2Templates(directory=TEMPLATES_DIR)
+
+
+def _seed_web(path: Path) -> None:
     """An initialised data folder with two projects (one archived) and a few issues."""
-    path = tmp_path / "web-home"
-    assert main(["--home", str(path), "init", "--name", "Alex", "--email", "alex@example.com"]) == 0
-    capsys.readouterr()
     engine = create_db_engine(load_config(path).db_path)
     try:
         with engine.begin() as conn:
@@ -41,21 +44,31 @@ def web_home(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
             issues.create_issue(conn, "OLD", "Hidden", "In an archived project", actor_id=me.id)
     finally:
         engine.dispose()
+
+
+@pytest.fixture
+def web_home(tmp_path: Path, home_templates) -> Path:
+    """An initialised data folder with two projects (one archived) and a few issues."""
+    path = tmp_path / "web-home"
+    shutil.copytree(home_templates.get("web", _seed_web), path)
     return path
 
 
 @pytest.fixture
-def app(web_home: Path) -> Iterator[FastAPI]:
+def app(web_home: Path, shared_templates: Jinja2Templates) -> Iterator[FastAPI]:
     engine = create_db_engine(load_config(web_home).db_path)
     try:
-        yield create_app(load_config(web_home), engine, port=PORT)
+        app = create_app(load_config(web_home), engine, port=PORT)
+        app.state.templates = shared_templates
+        yield app
     finally:
         engine.dispose()
 
 
 @pytest.fixture
-def client(app: FastAPI) -> TestClient:
-    return TestClient(app, base_url=f"http://127.0.0.1:{PORT}")
+def client(app: FastAPI) -> Iterator[TestClient]:
+    with TestClient(app, base_url=f"http://127.0.0.1:{PORT}") as test_client:
+        yield test_client
 
 
 @pytest.fixture
@@ -63,12 +76,8 @@ def csrf_token(app: FastAPI) -> str:
     return app.state.csrf.token
 
 
-@pytest.fixture
-def nav_home(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
+def _seed_nav(path: Path) -> None:
     """A data folder for the navigator: due dates, people, labels and linked sources (one in error)."""
-    path = tmp_path / "nav-home"
-    assert main(["--home", str(path), "init", "--name", "Alex", "--email", "alex@example.com"]) == 0
-    capsys.readouterr()
     engine = create_db_engine(load_config(path).db_path)
     try:
         with engine.begin() as conn:
@@ -127,29 +136,35 @@ def nav_home(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
                 linking.link_source(conn, key, object_id, actor_id=me.id)
     finally:
         engine.dispose()
+
+
+@pytest.fixture
+def nav_home(tmp_path: Path, home_templates) -> Path:
+    """A data folder for the navigator: due dates, people, labels and linked sources (one in error)."""
+    path = tmp_path / "nav-home"
+    shutil.copytree(home_templates.get("nav", _seed_nav), path)
     return path
 
 
 @pytest.fixture
-def nav_app(nav_home: Path) -> Iterator[FastAPI]:
+def nav_app(nav_home: Path, shared_templates: Jinja2Templates) -> Iterator[FastAPI]:
     engine = create_db_engine(load_config(nav_home).db_path)
     try:
-        yield create_app(load_config(nav_home), engine, port=PORT)
+        app = create_app(load_config(nav_home), engine, port=PORT)
+        app.state.templates = shared_templates
+        yield app
     finally:
         engine.dispose()
 
 
 @pytest.fixture
-def nav_client(nav_app: FastAPI) -> TestClient:
-    return TestClient(nav_app, base_url=f"http://127.0.0.1:{PORT}")
+def nav_client(nav_app: FastAPI) -> Iterator[TestClient]:
+    with TestClient(nav_app, base_url=f"http://127.0.0.1:{PORT}") as test_client:
+        yield test_client
 
 
-@pytest.fixture
-def detail_home(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
+def _seed_detail(path: Path) -> None:
     """A data folder for the issue detail page: a hierarchy, due dates, reasons and a merged person."""
-    path = tmp_path / "detail-home"
-    assert main(["--home", str(path), "init", "--name", "Alex", "--email", "alex@example.com"]) == 0
-    capsys.readouterr()
     engine = create_db_engine(load_config(path).db_path)
     try:
         with engine.begin() as conn:
@@ -187,18 +202,28 @@ def detail_home(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
             make("Alphabet epic", "Epic of another project", project="ABC", issue_type="Epic")
     finally:
         engine.dispose()
+
+
+@pytest.fixture
+def detail_home(tmp_path: Path, home_templates) -> Path:
+    """A data folder for the issue detail page: a hierarchy, due dates, reasons and a merged person."""
+    path = tmp_path / "detail-home"
+    shutil.copytree(home_templates.get("detail", _seed_detail), path)
     return path
 
 
 @pytest.fixture
-def detail_app(detail_home: Path) -> Iterator[FastAPI]:
+def detail_app(detail_home: Path, shared_templates: Jinja2Templates) -> Iterator[FastAPI]:
     engine = create_db_engine(load_config(detail_home).db_path)
     try:
-        yield create_app(load_config(detail_home), engine, port=PORT)
+        app = create_app(load_config(detail_home), engine, port=PORT)
+        app.state.templates = shared_templates
+        yield app
     finally:
         engine.dispose()
 
 
 @pytest.fixture
-def detail_client(detail_app: FastAPI) -> TestClient:
-    return TestClient(detail_app, base_url=f"http://127.0.0.1:{PORT}")
+def detail_client(detail_app: FastAPI) -> Iterator[TestClient]:
+    with TestClient(detail_app, base_url=f"http://127.0.0.1:{PORT}") as test_client:
+        yield test_client

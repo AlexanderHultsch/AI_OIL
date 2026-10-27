@@ -16,13 +16,24 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(timeutil, "_now", lambda: datetime(2026, 10, 27, 8, 0, 0, tzinfo=UTC))
 
 
-@pytest.fixture
-def project(oil, capsys: pytest.CaptureFixture[str]) -> None:
+def seed_project(path: Path) -> None:
+    def oil(*argv: str) -> int:
+        return main(["--home", str(path), *argv])
+
     assert oil("project", "add", "OIL", "Open issues") == 0
     assert oil("component", "add", "OIL", "Electronics") == 0
     assert oil("component", "add", "OIL", "Housing") == 0
     assert oil("person", "add", "Bob", "--email", "bob@example.com") == 0
-    capsys.readouterr()
+
+
+@pytest.fixture
+def home_seed(request: pytest.FixtureRequest):
+    return ("issue-cmd-project", seed_project) if "project" in request.fixturenames else None
+
+
+@pytest.fixture
+def project(home) -> None:
+    pass
 
 
 @pytest.mark.usefixtures("project")

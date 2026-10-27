@@ -1,15 +1,21 @@
+from pathlib import Path
+
 import pytest
 
+from ai_oil.cli.main import main
 from ai_oil.domain import history, issue_links, issues
 from ai_oil.governance import audit
 
 
-@pytest.fixture(autouse=True)
-def two_issues(oil, capsys: pytest.CaptureFixture[str]) -> None:
-    oil("project", "add", "OIL", "Open issues")
-    oil("issue", "create", "-p", "OIL", "-s", "First", "-d", "Description")
-    oil("issue", "create", "-p", "OIL", "-s", "Second", "-d", "Description")
-    capsys.readouterr()
+def seed_two_issues(path: Path) -> None:
+    main(["--home", str(path), "project", "add", "OIL", "Open issues"])
+    main(["--home", str(path), "issue", "create", "-p", "OIL", "-s", "First", "-d", "Description"])
+    main(["--home", str(path), "issue", "create", "-p", "OIL", "-s", "Second", "-d", "Description"])
+
+
+@pytest.fixture
+def home_seed():
+    return "issue-link-cmd-two-issues", seed_two_issues
 
 
 def test_issue_link_add(oil, db, capsys: pytest.CaptureFixture[str]) -> None:

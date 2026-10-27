@@ -1,11 +1,14 @@
 import dataclasses
+import shutil
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pytest
 import sqlalchemy
 from sqlalchemy import text
 
 from ai_oil import timeutil
+from ai_oil.db.engine import create_db_engine
 from ai_oil.domain import comments, issue_links, issues, people, projects
 from ai_oil.errors import ValidationError
 from ai_oil.search import compiler, oql
@@ -49,8 +52,7 @@ TIMES: dict[str, tuple[datetime, datetime, datetime | None]] = {
 }
 
 
-@pytest.fixture
-def world(conn: sqlalchemy.Connection) -> None:
+def build_world(conn: sqlalchemy.Connection) -> None:
     """Eight issues in two projects with people, labels, components, links, comments and sources."""
     me = people.create_person(conn, "Alex Hultsch", is_me=True)
     bea = people.create_person(conn, "Bea Brandt")
@@ -225,6 +227,37 @@ def world(conn: sqlalchemy.Connection) -> None:
                 "key": key,
             },
         )
+
+
+@pytest.fixture(scope="module")
+def world_db_template(tmp_path_factory: pytest.TempPathFactory, migrated_db_template: Path) -> Path:
+    """The world dataset, built once under the frozen clock, as one self-contained database file."""
+    path = tmp_path_factory.mktemp("world-db") / "world.db"
+    shutil.copyfile(migrated_db_template, path)
+    template_engine = create_db_engine(path)
+    try:
+        with pytest.MonkeyPatch.context() as patch:
+            freeze(patch, NOW)
+            with template_engine.begin() as connection:
+                build_world(connection)
+    finally:
+        template_engine.dispose()
+    if path.with_name(path.name + "-wal").exists():
+        raise RuntimeError("the template database must be a single file without a write-ahead log")
+    return path
+
+
+@pytest.fixture
+def engine_template(request: pytest.FixtureRequest, migrated_db_template: Path) -> Path:
+    """The prebuilt world dataset for tests that request `world`, the plain migrated database otherwise."""
+    if "world" in request.fixturenames:
+        return request.getfixturevalue("world_db_template")
+    return migrated_db_template
+
+
+@pytest.fixture
+def world(engine: sqlalchemy.Engine) -> None:
+    """Marker for the dataset: `engine` already starts from a copy of it (see `engine_template`)."""
 
 
 def quote(value: str) -> str:

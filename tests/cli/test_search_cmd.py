@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -15,8 +16,10 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(timeutil, "_now", lambda: datetime(2026, 10, 27, 8, 0, 0, tzinfo=UTC))
 
 
-@pytest.fixture
-def two_issues(oil, clock, capsys: pytest.CaptureFixture[str]) -> None:
+def seed_two_issues(path: Path) -> None:
+    def oil(*argv: str) -> int:
+        return main(["--home", str(path), *argv])
+
     assert oil("project", "add", "OIL", "Open issues") == 0
     assert oil("person", "add", "Bob Builder", "--email", "bob@example.com") == 0
     assert oil("issue", "create", "-p", "OIL", "-s", "Plain", "-d", "D") == 0
@@ -40,7 +43,19 @@ def two_issues(oil, clock, capsys: pytest.CaptureFixture[str]) -> None:
         == 0
     )
     assert oil("issue", "edit", "OIL-2", "--status", "In Progress") == 0
-    capsys.readouterr()
+
+
+@pytest.fixture
+def home_seed(request: pytest.FixtureRequest):
+    if "two_issues" not in request.fixturenames:
+        return None
+    request.getfixturevalue("clock")
+    return ("search-cmd-two-issues", seed_two_issues)
+
+
+@pytest.fixture
+def two_issues(home, clock) -> None:
+    pass
 
 
 @pytest.mark.usefixtures("two_issues")

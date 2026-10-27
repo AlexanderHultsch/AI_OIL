@@ -1,14 +1,20 @@
+from pathlib import Path
+
 import pytest
 
+from ai_oil.cli.main import main
 from ai_oil.domain import comments, history, issues
 from ai_oil.governance import audit
 
 
-@pytest.fixture(autouse=True)
-def issue(oil, capsys: pytest.CaptureFixture[str]) -> None:
-    oil("project", "add", "OIL", "Open issues")
-    oil("issue", "create", "-p", "OIL", "-s", "Summary", "-d", "Description")
-    capsys.readouterr()
+def seed_issue(path: Path) -> None:
+    main(["--home", str(path), "project", "add", "OIL", "Open issues"])
+    main(["--home", str(path), "issue", "create", "-p", "OIL", "-s", "Summary", "-d", "Description"])
+
+
+@pytest.fixture
+def home_seed():
+    return "comment-cmd-issue", seed_issue
 
 
 def test_comment_add(oil, db, capsys: pytest.CaptureFixture[str]) -> None:

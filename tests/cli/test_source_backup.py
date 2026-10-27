@@ -8,6 +8,7 @@ import pytest
 import sqlalchemy
 
 from ai_oil import backup, timeutil
+from ai_oil.cli.main import main
 from ai_oil.config import load_config
 from ai_oil.db.engine import create_db_engine
 from ai_oil.governance import audit
@@ -97,11 +98,34 @@ def add_scripted(home, scripted_registered):
         engine.dispose()
 
 
+def seed_issue(path: Path) -> None:
+    assert main(["--home", str(path), "project", "add", "OIL", "Open issues"]) == 0
+    assert (
+        main(
+            [
+                "--home",
+                str(path),
+                "issue",
+                "create",
+                "-p",
+                "OIL",
+                "-s",
+                "Fit the filter",
+                "-d",
+                "Needs a part",
+            ]
+        )
+        == 0
+    )
+
+
 @pytest.fixture
-def issue(oil, capsys: pytest.CaptureFixture[str]) -> str:
-    assert oil("project", "add", "OIL", "Open issues") == 0
-    assert oil("issue", "create", "-p", "OIL", "-s", "Fit the filter", "-d", "Needs a part") == 0
-    capsys.readouterr()
+def home_seed(request: pytest.FixtureRequest):
+    return ("source-backup-issue", seed_issue) if "issue" in request.fixturenames else None
+
+
+@pytest.fixture
+def issue(home) -> str:
     return "OIL-1"
 
 

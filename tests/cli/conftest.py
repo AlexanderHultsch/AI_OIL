@@ -1,3 +1,4 @@
+import shutil
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
@@ -11,11 +12,17 @@ from ai_oil.db.engine import create_db_engine
 
 
 @pytest.fixture
-def home(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
+def home_seed():
+    """Hook: a test module overrides this to start its tests from a seeded folder, as (name, seed)."""
+    return None
+
+
+@pytest.fixture
+def home(tmp_path: Path, home_templates, home_seed) -> Path:
     """An initialised data folder whose 'me' person is Alex <alex@example.com>."""
+    name, seed = home_seed or ("cli", None)
     path = tmp_path / "cli-home"
-    assert main(["--home", str(path), "init", "--name", "Alex", "--email", "alex@example.com"]) == 0
-    capsys.readouterr()
+    shutil.copytree(home_templates.get(name, seed), path)
     return path
 
 
