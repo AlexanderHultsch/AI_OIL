@@ -60,6 +60,10 @@ class AtlassianClient:
         """GET `path` below the base URL and return the decoded JSON body."""
         return self._get(self._base_url + path, path, params)
 
+    def final_url(self, path: str) -> str:
+        """The URL a GET of `path` on the site root ends up at after following redirects (CON-41)."""
+        return self._send(self._origin() + path, path, None).url
+
     def get_paged(
         self,
         path: str,
@@ -127,6 +131,13 @@ class AtlassianClient:
         return token
 
     def _get(self, url: str, label: str, params: Mapping[str, object] | None) -> Any:
+        response = self._send(url, label, params)
+        try:
+            return response.json()
+        except ValueError:
+            raise AtlassianError(f"invalid JSON from {label}") from None
+
+    def _send(self, url: str, label: str, params: Mapping[str, object] | None) -> requests.Response:
         if self._token is None:
             self._token = self._api_token()
         token = self._token
@@ -140,6 +151,7 @@ class AtlassianClient:
                     headers={"Accept": "application/json"},
                     timeout=self._timeout,
                     verify=self._ca_bundle if self._ca_bundle else True,
+                    allow_redirects=True,
                 )
             except requests.RequestException as exc:
                 raise AtlassianError(
@@ -153,10 +165,7 @@ class AtlassianClient:
                 attempt += 1
                 continue
             if status == 200:
-                try:
-                    return response.json()
-                except ValueError:
-                    raise AtlassianError(f"invalid JSON from {label}") from None
+                return response
             if status == 404:
                 raise AtlassianNotFound(f"not found: {label}")
             if status in (401, 403):

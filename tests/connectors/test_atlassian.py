@@ -27,7 +27,9 @@ class FakeResponse:
         headers: dict[str, str] | None = None,
         text: str = "",
         invalid_json: bool = False,
+        url: str = "",
     ) -> None:
+        self.url = url
         self.status_code = status_code
         self.headers = headers or {}
         self.text = text
@@ -326,6 +328,40 @@ def test_get_cursor_paged_stops_without_next() -> None:
     assert client.get_cursor_paged("/api/v2/pages", None) == [1]
     assert len(session.calls) == 1
     assert session.calls[0]["params"] == {"limit": 100}
+
+
+def test_final_url_follows_redirects_on_the_site_root_and_returns_the_last_url() -> None:
+    final = f"{BASE}/wiki/spaces/ABC/pages/123/Title"
+    client, session = make_client(FakeResponse(text="<html>", url=final), base_url=BASE + "/wiki")
+    assert client.final_url("/wiki/x/AbC") == final
+    (call,) = session.calls
+    assert call["url"] == f"{BASE}/wiki/x/AbC"
+    assert call["params"] is None
+    assert call["allow_redirects"] is True
+    assert call["auth"] == ("me@example.com", TOKEN)
+    assert call["headers"] == {"Accept": "application/json"}
+    assert call["timeout"] == 30.0
+    assert call["verify"] is True
+
+
+def test_final_url_does_not_need_a_json_body_and_passes_the_ca_bundle() -> None:
+    client, session = make_client(
+        FakeResponse(invalid_json=True, url=f"{BASE}/wiki/p"), ca_bundle="C:/certs/corp.pem"
+    )
+    assert client.final_url("/wiki/x/AbC") == f"{BASE}/wiki/p"
+    assert session.calls[0]["verify"] == "C:/certs/corp.pem"
+
+
+def test_final_url_maps_statuses_like_get_json() -> None:
+    client, _ = make_client(FakeResponse(404))
+    with pytest.raises(AtlassianNotFound):
+        client.final_url("/wiki/x/AbC")
+    client, _ = make_client(FakeResponse(401))
+    with pytest.raises(AtlassianError, match="authentication failed"):
+        client.final_url("/wiki/x/AbC")
+    client, session = make_client(FakeResponse(429, headers={"Retry-After": "3"}), FakeResponse(url="u"))
+    assert client.final_url("/wiki/x/AbC") == "u"
+    assert len(session.calls) == 2
 
 
 # --- timestamps ------------------------------------------------------------------------------------
