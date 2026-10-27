@@ -28,6 +28,7 @@ oil search 'text ~ "lead time" AND statusCategory != Done'
 | [`docs/specification.md`](docs/specification.md) | The specification (v0.3). Chapter 9 lists every CLI command |
 | [`src/ai_oil/db/sql/0001_baseline.sql`](src/ai_oil/db/sql/0001_baseline.sql) | The data model as an executable SQLite schema |
 | [`docs/implementation_plan.md`](docs/implementation_plan.md) | Conventions, work order and status |
+| [`docs/open_points.md`](docs/open_points.md) | Every open point, limitation and decision, for all phases |
 
 ## Phases
 

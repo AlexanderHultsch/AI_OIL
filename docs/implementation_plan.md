@@ -21,9 +21,25 @@ Work order for building AI_OIL against `docs/specification.md` v0.2. Each step i
 
 ## Status (27 October 2026)
 
-**Phase 1 is complete.** 1,759 tests pass, lint and format are clean, and the phase-1 end-to-end test (`tests/e2e/test_p1.py`) covers the exit criteria with fixture-backed connectors. The real acceptance run on the target laptop (`oil connector check --live`, then a first real `oil sync`) is still open.
+**Phase 1 is complete; phase 2 is in progress.** Open points of all phases are collected in `docs/open_points.md`.
+
+**Phase 1:** 1,759 tests pass, lint and format are clean, and the phase-1 end-to-end test (`tests/e2e/test_p1.py`) covers the exit criteria with fixture-backed connectors. The real acceptance run on the target laptop (`oil connector check --live`, then a first real `oil sync`) is still open.
 
 Steps 5, 8, 13, 17 and 18 were split into sub-steps during execution (5a–c, 8a–c, 13a–b, 17a–b, 18a–b); step 21b fixed a missing credential store found in a manual run.
+
+## Web conventions (phase 2, binding)
+
+| Topic | Rule |
+|---|---|
+| Stack | FastAPI + Jinja2 templates + htmx, served by uvicorn from the same Python process (UI-1). No npm, no build step, no CDN at runtime: htmx is a pinned file in `src/ai_oil/web/static/` |
+| Binding | `oil serve [--port N] [--no-browser]` listens on 127.0.0.1 only (UI-2); default port 8765, `--port 0` picks a free one |
+| Host check | Requests whose Host header is not `127.0.0.1:<port>` or `localhost:<port>` are rejected (DNS-rebinding protection) |
+| CSRF | One random token per server process; every POST/PUT/PATCH/DELETE must carry it as header `X-CSRF-Token` (htmx via `hx-headers` on `<body>`) or form field `csrf_token`; otherwise 403 (UI-3) |
+| Layout | `src/ai_oil/web/`: `app.py` (factory `create_app(config, engine)`), `deps.py`, `csrf.py`, `routes/<area>.py`, `templates/`, `static/` (`htmx.min.js`, `app.css`, `app.js`) |
+| Writes | Through the same domain services as the CLI, one transaction per request, one audit entry per change with the CLI's action names |
+| Fragments | Full pages for GET; htmx requests (`HX-Request` header) get fragments; errors render inline with the domain error message |
+| Tests | FastAPI `TestClient` (httpx) against a temporary data folder; one browser test with the pre-installed Playwright Chromium |
+| Design | Jira-like and plain: left navigation, top search bar, tables, a right-hand side panel on the issue page; own small CSS, system font, light theme |
 
 ## Steps
 
@@ -51,7 +67,15 @@ Steps 5, 8, 13, 17 and 18 were split into sub-steps during execution (5a–c, 8a
 | 19 | Confluence connector | `pytest tests/connectors/test_confluence.py` |
 | 20 | SharePoint connector | `pytest tests/connectors/test_sharepoint.py` |
 | 21 | `oil connector add/list/check [--live]`, P1 end-to-end test | `pytest tests/e2e/test_p1.py && pytest && ruff check` |
-| 22–26 | P2 web interface | per step |
+| 22 | Web foundation: dependencies, vendored htmx, `oil serve`, app factory, loopback + Host check, CSRF, base layout, static assets | `pytest tests/web/test_app.py` |
+| 23a | Saved filters service with built-ins (SRCH-8); issue navigator read view (OQL, columns, overdue and fetch-error markers, OQL error with caret) | `pytest tests/search/test_saved_filters.py tests/web/test_navigator.py` |
+| 23b | Navigator interaction: quick-filter chips, sort by header, inline edit of status / priority / assignee / due, save filter | `pytest tests/web/test_navigator.py tests/web/test_navigator_edit.py` |
+| 24a | Issue detail page: main column, side panel, status transitions with reason, in-place field edits | `pytest tests/web/test_issue_detail.py` |
+| 24b | Issue detail: comments, issue links, labels, components, history tab | `pytest tests/web/test_issue_detail.py tests/web/test_issue_detail_edit.py` |
+| 25a | Sources panel with refresh, link dialog with preview (reference, selected Outlook email, subject search, new note), unlink | `pytest tests/web/test_sources_ui.py` |
+| 25b | Activity timeline (comments, history, source entries, new versions), expandable items, version diff view | `pytest tests/web/test_activity.py` |
+| 26a | Create dialog, connectors page (incl. live check), sync log, people (merge), projects and components, keyboard shortcuts, NFR-3 timing test | `pytest tests/web` |
+| 26b | Browser end-to-end test in Chromium (P2 exit criteria: P1 acceptance repeated without the CLI) | `pytest tests/e2e/test_p2_browser.py && pytest && ruff check` |
 | 27–31 | P3 AI enrichment | per step |
 | 32–33 | P4 assistant | per step |
 | 34–36 | P5 write-back and dashboards | per step |
