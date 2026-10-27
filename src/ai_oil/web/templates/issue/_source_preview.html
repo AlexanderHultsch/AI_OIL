@@ -1,0 +1,14 @@
+{#- What a connector reports for a reference, and the button that links it (UI-22). -#}
+<div class="source-preview">
+  <dl>
+    <dt>Connector</dt><dd>{{ preview.connector }} ({{ preview.connector_type }})</dd>
+    <dt>Type</dt><dd>{{ preview.object_type }}</dd>
+    <dt>Title</dt><dd>{{ preview.title or "—" }}</dd>
+    <dt>Reference</dt><dd>{{ preview.display_ref or "—" }}</dd>
+    <dt>Locator</dt><dd>{{ preview.locator or "—" }}</dd>
+  </dl>
+  <form hx-post="/issues/{{ issue.key }}/sources/link" hx-target="#sources-panel" hx-swap="outerHTML">
+    {% for name, value in preview.fields.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    <button type="submit" class="primary">Link</button>
+  </form>
+</div>

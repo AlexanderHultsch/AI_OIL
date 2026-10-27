@@ -14,6 +14,7 @@ from ai_oil.errors import NotFoundError, ValidationError
 from ai_oil.governance import audit
 from ai_oil.web.deps import db_read, db_write
 from ai_oil.web.rendering import render
+from ai_oil.web.routes.issue_sources import sources_context
 from ai_oil.web.routes.issues import _due_date, _local_time
 
 router = APIRouter()
@@ -269,6 +270,7 @@ def issue_detail(request: Request, key: str, conn: Annotated[sqlalchemy.Connecti
         **_context(conn, issue),
         **_side_context(conn, issue),
         **_links_context(conn, issue),
+        **sources_context(conn, issue),
         **_comments_context(conn, issue),
         "nav_active": "issues",
     }

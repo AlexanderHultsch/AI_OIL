@@ -1,0 +1,69 @@
+{#- The sources panel: the issue's dictionary of sources grouped by type, and the link dialog; it replaces itself on every change (UI-21, UI-22). -#}
+<section class="panel" id="sources-panel">
+<div hx-target="#sources-panel" hx-swap="outerHTML">
+  <div class="panel-head">
+    <h2>Sources</h2>
+    <button type="button" hx-post="/issues/{{ issue.key }}/sources/refresh">Refresh all</button>
+  </div>
+  {% if sync_summary -%}
+  <div class="sync-summary sync-{{ sync_summary.status }}" role="status">
+    <p class="sync-head">{{ sync_summary.head }}</p>
+    {% if sync_summary.lines -%}
+    <ul class="sync-lines">
+      {% for line in sync_summary.lines %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+    {%- endif %}
+  </div>
+  {%- endif %}
+  {% for group in source_groups -%}
+  <h3 class="source-group">{{ group.heading }}</h3>
+  <ul class="source-list">
+    {% for source in group.rows %}
+    <li class="source" id="source-{{ source.id }}">
+      <span class="source-status status-{{ source.status }}" aria-label="{{ source.status }}"{% if source.icon_title %} title="{{ source.icon_title }}"{% endif %}>{{ source.icon }}</span>
+      <a class="source-label" href="/sources/{{ source.id }}">{{ source.label }}</a>
+      <span class="badge">{{ source.role }}</span>
+      <span class="muted">{{ source.connector }}</span>
+      <span class="muted">checked {{ source.checked }}</span>
+      <span class="muted">changed {{ source.changed }}</span>
+      <span class="muted">{{ source.versions }} versions · {{ source.entries }} entries</span>
+      {% if source.open_url %}<a class="source-open" href="{{ source.open_url }}" target="_blank" rel="noopener">Open in source</a>{% endif %}
+      {% if source.path %}<code class="source-path">{{ source.path }}</code>{% endif %}
+      <span class="source-actions">
+        <button type="button" hx-post="/issues/{{ issue.key }}/sources/{{ source.id }}/refresh">Refresh</button>
+        <button type="button" hx-post="/issues/{{ issue.key }}/sources/{{ source.id }}/unlink" hx-confirm="Unlink this source?">Unlink</button>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else -%}
+  <p class="placeholder">No sources linked yet.</p>
+  {%- endfor %}
+  <details class="link-dialog">
+    <summary>Link source</summary>
+    <form class="link-form" hx-post="/issues/{{ issue.key }}/sources/preview" hx-target="#link-preview" hx-swap="innerHTML">
+      <h3>Reference</h3>
+      <input type="text" name="reference" placeholder="URL, key or path" aria-label="Reference" autocomplete="off" required>
+      <select name="role" aria-label="Role">
+        {% for role in roles %}<option value="{{ role }}"{% if role == default_role %} selected{% endif %}>{{ role }}</option>{% endfor %}
+      </select>
+      <input type="text" name="note_text" placeholder="Why is it relevant? (optional)" aria-label="Note" autocomplete="off">
+      <button type="submit">Preview</button>
+      <button type="button" hx-post="/issues/{{ issue.key }}/sources/preview-outlook" hx-include="closest form" hx-target="#link-preview" hx-swap="innerHTML">Use selected Outlook email</button>
+    </form>
+    <div id="link-preview"></div>
+    <form class="link-form" hx-post="/issues/{{ issue.key }}/sources/outlook-search" hx-target="#link-candidates" hx-swap="innerHTML">
+      <h3>Search Outlook by subject</h3>
+      <input type="text" name="subject" placeholder="Subject" aria-label="Subject" autocomplete="off" required>
+      <button type="submit">Search</button>
+    </form>
+    <div id="link-candidates"></div>
+    <form class="link-form" hx-post="/issues/{{ issue.key }}/sources/note">
+      <h3>New note</h3>
+      <input type="text" name="title" placeholder="Title" aria-label="Note title" autocomplete="off" required>
+      <textarea name="text" rows="3" placeholder="Text" aria-label="Note text" required></textarea>
+      <button type="submit">Create note</button>
+    </form>
+  </details>
+</div>
+</section>

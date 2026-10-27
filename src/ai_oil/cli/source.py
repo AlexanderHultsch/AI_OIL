@@ -11,12 +11,11 @@ from sqlalchemy import text
 from ai_oil.backup import maybe_auto_backup
 from ai_oil.cli.common import transaction
 from ai_oil.cli.context import open_context
-from ai_oil.connectors import manual, outlook
+from ai_oil.connectors import manual
 from ai_oil.domain import people
 from ai_oil.errors import ValidationError
 from ai_oil.governance import audit
-from ai_oil.sources import linking, registry, store
-from ai_oil.sources.model import ObjectMeta
+from ai_oil.sources import link_service, linking, registry, store
 from ai_oil.sources.sync import SyncScope, format_report, run_sync
 
 
@@ -79,102 +78,30 @@ def register(subparsers) -> None:
 def _link_note(args: argparse.Namespace) -> int:
     with transaction(args) as conn:
         me = people.get_me(conn)
-        object_id = manual.create_note(conn, args.title, args.text)
-        linked = linking.link_source(
-            conn, args.key, object_id, role=args.role, note=args.note_text, actor_id=me.id
+        linked, label = link_service.link_note(
+            conn, args.key, args.title, args.text, role=args.role, note=args.note_text, actor_id=me.id
         )
-        audit.log(
-            conn,
-            "source.link",
-            "B",
-            actor_type="user",
-            target=linked.issue_key,
-            detail={"source_object_id": object_id, "label": f"note: {args.title.strip()}", "role": args.role},
-        )
-    print(f"Linked note: {args.title.strip()} to {linked.issue_key}")
+    print(f"Linked {label} to {linked.issue_key}")
     return 0
 
 
-def _choose(
-    matches: list[tuple[registry.ConnectorRow, object]],
-    reference: str,
-    skipped: list[tuple[str, str]] | None = None,
-) -> tuple[registry.ConnectorRow, object]:
-    """Matches of real connectors win over the manual connector's; several of them are ambiguous."""
-    specific = [match for match in matches if match[0].type != manual.ManualConnector.type]
-    if len(specific) > 1:
-        names = ", ".join(row.name for row, _ in specific)
-        raise ValidationError(
-            f"several connectors recognise '{reference}' ({names}); choose one with --connector"
-        )
-    if specific:
-        return specific[0]
-    if matches:
-        return matches[0]
-    note = f" (skipped: {'; '.join(f'{name}: {error}' for name, error in skipped)})" if skipped else ""
-    raise ValidationError(f"no connector recognises '{reference}'{note}")
+Selector = Callable[[sqlalchemy.Connection, argparse.Namespace], link_service.Selection | None]
 
 
-Selection = tuple[registry.ConnectorRow, ObjectMeta] | None
-Selector = Callable[
-    [argparse.Namespace, list[tuple[registry.ConnectorRow, object]], list[tuple[str, str]]], Selection
-]
+def _select_reference(conn: sqlalchemy.Connection, args: argparse.Namespace) -> link_service.Selection:
+    return link_service.select_reference(conn, args.reference, connector=args.connector)
 
 
-def _select_reference(
-    args: argparse.Namespace,
-    instances: list[tuple[registry.ConnectorRow, object]],
-    skipped: list[tuple[str, str]],
-    reference: str | None = None,
-) -> Selection:
-    reference = args.reference if reference is None else reference
-    matches = registry.match_reference(instances, reference)
-    row, ref = _choose(matches, reference, skipped)
-    connector = next(instance for candidate, instance in instances if candidate.id == row.id)
-    return row, connector.resolve(ref)  # type: ignore[attr-defined]
-
-
-def _outlook_instance(
-    args: argparse.Namespace, instances: list[tuple[registry.ConnectorRow, object]]
-) -> tuple[registry.ConnectorRow, object]:
-    found = [(row, instance) for row, instance in instances if row.type == outlook.OutlookConnector.type]
-    if args.connector is not None and instances and not found:
-        raise ValidationError(f"connector {args.connector} is not an Outlook connector")
-    if not found:
-        raise ValidationError("no enabled Outlook connector — add one with `oil connector add outlook`")
-    if len(found) > 1:
-        names = ", ".join(row.name for row, _ in found)
-        raise ValidationError(
-            f"several Outlook connectors are enabled ({names}); choose one with --connector"
-        )
-    return found[0]
-
-
-def _select_outlook_selected(
-    args: argparse.Namespace,
-    instances: list[tuple[registry.ConnectorRow, object]],
-    skipped: list[tuple[str, str]],
-) -> Selection:
-    return _select_reference(args, [_outlook_instance(args, instances)], skipped, outlook.SELECTED_REFERENCE)
-
-
-def _describe_candidate(number: int, candidate: outlook.ConversationCandidate) -> str:
-    latest = candidate.latest.astimezone().strftime("%Y-%m-%d %H:%M") if candidate.latest else "no date"
-    return (
-        f"  {number}. {candidate.subject} — {latest} — {candidate.sender}"
-        f" ({candidate.message_count} messages)"
-    )
+def _select_outlook_selected(conn: sqlalchemy.Connection, args: argparse.Namespace) -> link_service.Selection:
+    return link_service.select_outlook_selected(conn, connector=args.connector)
 
 
 def _select_outlook_subject(
-    args: argparse.Namespace,
-    instances: list[tuple[registry.ConnectorRow, object]],
-    skipped: list[tuple[str, str]],
-) -> Selection:
-    row, connector = _outlook_instance(args, instances)
-    candidates = connector.find_conversations(args.outlook_subject)  # type: ignore[attr-defined]
-    if not candidates:
-        raise ValidationError(f"no email conversation matches '{args.outlook_subject}'")
+    conn: sqlalchemy.Connection, args: argparse.Namespace
+) -> link_service.Selection | None:
+    row, connector, candidates = link_service.outlook_candidates(
+        conn, args.outlook_subject, connector=args.connector
+    )
     if args.pick is not None:
         if args.pick > len(candidates):
             raise ValidationError(
@@ -186,9 +113,9 @@ def _select_outlook_subject(
     else:
         print("Several conversations match; re-run with --pick N:")
         for number, candidate in enumerate(candidates, start=1):
-            print(_describe_candidate(number, candidate))
+            print(link_service.describe_candidate(number, candidate))
         return None
-    return row, connector.resolve(chosen.ref)  # type: ignore[attr-defined]
+    return link_service.Selection(row, connector, chosen.ref)
 
 
 def _link_source(args: argparse.Namespace, select: Selector) -> int:
@@ -196,37 +123,18 @@ def _link_source(args: argparse.Namespace, select: Selector) -> int:
     try:
         with ctx.engine.begin() as conn:
             me = people.get_me(conn)
-            manual.ensure_manual_connector(conn)
-            only = registry.get_connector(conn, args.connector).id if args.connector is not None else None
-            instances = []
-            skipped: list[tuple[str, str]] = []
-            for candidate in registry.list_connectors(conn):
-                if not candidate.enabled or (only is not None and candidate.id != only):
-                    continue
-                try:
-                    instances.append((candidate, registry.instantiate(candidate)))
-                except Exception as exc:
-                    skipped.append((candidate.name, f"{type(exc).__name__}: {exc}"))
-            if only is not None and skipped:
-                raise ValidationError(f"connector {skipped[0][0]} is not usable: {skipped[0][1]}")
-            selection = select(args, instances, skipped)
-            if selection is None:
-                return 1
-            row, meta = selection
-            object_id = store.upsert_object(conn, row.id, meta)
-            linked = linking.link_source(
-                conn, args.key, object_id, role=args.role, note=args.note_text, actor_id=me.id
-            )
-            label = linking.source_label(store.get_object(conn, object_id))
-            audit.log(
-                conn,
-                "source.link",
-                "B",
-                actor_type="user",
-                target=linked.issue_key,
-                detail={"source_object_id": object_id, "label": label, "role": args.role},
-            )
-        report = run_sync(ctx.engine, SyncScope("source", object_id), config=ctx.config, trigger="cli")
+            selection = select(conn, args)
+        if selection is None:
+            return 1
+        linked, label, report = link_service.link_selection(
+            ctx.engine,
+            ctx.config,
+            args.key,
+            selection,
+            role=args.role,
+            note=args.note_text,
+            actor_id=me.id,
+        )
     finally:
         ctx.engine.dispose()
     print(f"Linked {label} to {linked.issue_key}")

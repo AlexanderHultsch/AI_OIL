@@ -51,6 +51,7 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OP-29 | Web GET pages run inside `BEGIN IMMEDIATE` and briefly take the write lock | Harmless for one user; a long sync keeps transactions short | Read-only dependency with `engine.connect()` if contention shows | accepted |
 | OP-35 | After a rejected inline edit in the issue list, the control keeps the chosen value until the page is reloaded (only the error message shows) | Misleading until reload | Re-render the row on error | accepted |
 | OP-36 | Descriptions and comments are Markdown by spec (DM-19, UI-20) but are shown as plain text with line breaks | No formatting in the web UI | Add a Markdown renderer (e.g. markdown-it-py, sanitised) | open |
+| OP-37 | Web UI error messages reuse CLI wording ("choose one with --connector", "add one with `oil connector add outlook`") | Slightly confusing in the browser | Give the link service messages without CLI syntax; let the CLI add its hints | open |
 
 ## 3. Decisions needed
 

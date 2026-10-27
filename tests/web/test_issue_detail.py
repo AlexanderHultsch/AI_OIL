@@ -126,7 +126,7 @@ def test_the_page_header_and_main_column(detail_client: TestClient) -> None:
     assert "Board passes EMC" in page
     match = re.search(r'<section class="panel" id="sources-panel">(.*?)</section>', page, re.DOTALL)
     assert match is not None
-    assert "Coming soon" in match.group(1)
+    assert "No sources linked yet." in match.group(1)
     assert '<a href="/issues" class="active" aria-current="page">Issues</a>' in page
 
 

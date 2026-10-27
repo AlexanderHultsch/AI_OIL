@@ -194,3 +194,32 @@ button.chip-remove:hover { color: var(--danger); background: var(--danger-bg); }
 .change-set ul { margin: 0; padding-left: 18px; }
 .event-field { font-weight: 600; }
 .event-old, .event-new { overflow-wrap: anywhere; }
+
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sync-summary { margin: 0 0 8px; padding: 6px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; }
+.sync-summary p { margin: 0; }
+.sync-failed, .sync-partial { border-color: var(--danger); }
+.sync-lines { margin: 4px 0 0; padding-left: 18px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+h3.source-group { margin: 12px 0 4px; font-size: 13px; }
+.source-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.source { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.source-status { min-width: 1.2em; text-align: center; }
+.status-error { color: var(--danger); }
+.source-label { font-weight: 600; overflow-wrap: anywhere; }
+.source-path { overflow-wrap: anywhere; }
+.source-actions { margin-left: auto; display: flex; gap: 4px; }
+.source-actions button { padding: 0 6px; font-size: 12px; }
+.link-dialog { margin: 12px 0 0; }
+.link-dialog summary { cursor: pointer; padding: 4px 0; font-weight: 600; }
+.link-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.link-form h3 { flex-basis: 100%; margin: 0; font-size: 13px; }
+.link-form input[type="text"] { flex: 1; min-width: 160px; }
+.link-form textarea { flex-basis: 100%; }
+.source-preview { margin: 0 0 8px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; }
+.source-preview dl { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 2px 8px; margin: 0 0 8px; }
+.source-preview dt { color: var(--muted); }
+.source-preview dd { margin: 0; overflow-wrap: anywhere; }
+.candidate-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.candidate-list li { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.candidate-list form { margin: 0; }
+.candidate { flex: 1; min-width: 0; overflow-wrap: anywhere; }
