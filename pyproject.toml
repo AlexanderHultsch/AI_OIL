@@ -28,6 +28,7 @@ dev = ["pytest>=8", "ruff>=0.5"]
 oil = "ai_oil.cli.main:main"
 
 [project.entry-points."ai_oil.connectors"]
+jira = "ai_oil.connectors.jira:JiraConnector"
 manual = "ai_oil.connectors.manual:ManualConnector"
 outlook = "ai_oil.connectors.outlook:OutlookConnector"
 
