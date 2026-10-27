@@ -2,6 +2,7 @@
 
 import argparse
 
+from ai_oil.cli import serve
 from ai_oil.config import default_home
 from ai_oil.setup.console import Console
 from ai_oil.setup.model import SetupContext
@@ -23,9 +24,14 @@ def run(args: argparse.Namespace) -> int:
         return 0
     ctx = SetupContext(home=args.home or default_home(), console=Console(), probe=LocalProbe(), args=args)
     try:
-        return run_wizard(ctx, only=args.only)
+        code = run_wizard(ctx, only=args.only)
+        if not ctx.state.get("start_now"):
+            return code
+        print("Starting AI_OIL …")
+        home = ctx.home
     except KeyboardInterrupt:
         print("Setup aborted — nothing half-written; run `oil setup` again any time.")
         return 1
     finally:
         ctx.close()
+    return serve.run_serve(argparse.Namespace(home=home, port=None, no_browser=False))

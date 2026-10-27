@@ -60,7 +60,22 @@ def test_the_real_stages_in_their_order() -> None:
         ("network", "Network"),
         ("atlassian", "Jira and Confluence"),
         ("sharepoint", "SharePoint and OneDrive files"),
+        ("finish", "Finish"),
     ]
+
+
+def _set_up_home(ctx: SetupContext) -> None:
+    ctx.home.mkdir(parents=True)
+    (ctx.home / "config.toml").write_text("", encoding="utf-8")
+
+
+def _menu_stages(install) -> None:
+    install(
+        ("data", "Data folder", _done()),
+        ("me", "About you", _done()),
+        ("backup", "Backups", _done()),
+        ("finish", "Finish", _done()),
+    )
 
 
 def test_runs_every_stage_in_order_and_prints_welcome_stage_lines_and_summary(stages, ctx) -> None:
@@ -212,3 +227,103 @@ def test_the_context_follows_a_switched_home(make_ctx, initialised_home: Path, t
 def test_args_are_kept(make_ctx, fresh_home: Path) -> None:
     ctx = make_ctx(fresh_home)
     assert isinstance(ctx.args, argparse.Namespace)
+
+
+# --- re-run menu -----------------------------------------------------------------------------------
+
+
+def test_a_fresh_folder_shows_no_menu(stages, ctx) -> None:
+    log, install = stages
+    _menu_stages(install)
+
+    assert wizard.run_wizard(ctx) == 0
+
+    assert log == ["data", "me", "backup", "finish"]
+    assert "already set up" not in ctx.console.output
+    assert ctx.console.prompts == []
+
+
+def test_an_existing_setup_offers_the_menu_and_option_1_runs_all_stages(stages, make_ctx, fresh_home) -> None:
+    log, install = stages
+    _menu_stages(install)
+    ctx = make_ctx(fresh_home, ["1"])
+    _set_up_home(ctx)
+
+    assert wizard.run_wizard(ctx) == 0
+
+    assert log == ["data", "me", "backup", "finish"]
+    output = ctx.console.output
+    assert f"AI_OIL is already set up in {fresh_home}. What do you want to do?" in output
+    assert "  1) Go through all stages again (your current values are offered)" in output
+    assert "  2) Change one area" in output
+    assert "  3) Only run the final check" in output
+    assert output.index("Type s to skip a stage") < output.index("already set up")
+    assert "1/4  Data folder" in output
+
+
+def test_the_menu_default_is_to_go_through_all_stages(stages, make_ctx, fresh_home) -> None:
+    log, install = stages
+    _menu_stages(install)
+    ctx = make_ctx(fresh_home, [""])
+    _set_up_home(ctx)
+
+    assert wizard.run_wizard(ctx) == 0
+
+    assert log == ["data", "me", "backup", "finish"]
+
+
+def test_option_2_runs_the_chosen_area_and_the_final_check(stages, make_ctx, fresh_home) -> None:
+    log, install = stages
+    _menu_stages(install)
+    ctx = make_ctx(fresh_home, ["2", "2"])
+    _set_up_home(ctx)
+
+    assert wizard.run_wizard(ctx) == 0
+
+    assert log == ["me", "finish"]
+    output = ctx.console.output
+    assert "Which area?" in output
+    assert "  1) Data folder" in output
+    assert "  3) Backups" in output
+    assert "  Finish" not in output.split("Which area?")[1].split("Number")[0]
+    assert "1/2  About you" in output
+    assert "2/2  Finish" in output
+
+
+def test_option_3_runs_only_the_final_check(stages, make_ctx, fresh_home) -> None:
+    log, install = stages
+    _menu_stages(install)
+    ctx = make_ctx(fresh_home, ["3"])
+    _set_up_home(ctx)
+
+    assert wizard.run_wizard(ctx) == 0
+
+    assert log == ["finish"]
+    assert "1/1  Finish" in ctx.console.output
+
+
+def test_only_never_shows_the_menu(stages, make_ctx, fresh_home) -> None:
+    log, install = stages
+    _menu_stages(install)
+    ctx = make_ctx(fresh_home)
+    _set_up_home(ctx)
+
+    assert wizard.run_wizard(ctx, only="me") == 0
+
+    assert log == ["me"]
+    assert "already set up" not in ctx.console.output
+    assert ctx.console.prompts == []
+
+
+def test_skipping_at_the_menu_changes_nothing_and_exits_with_0(stages, make_ctx, fresh_home) -> None:
+    log, install = stages
+    _menu_stages(install)
+    ctx = make_ctx(fresh_home, ["s"])
+    _set_up_home(ctx)
+
+    assert wizard.run_wizard(ctx) == 0
+
+    assert log == []
+    output = ctx.console.output
+    assert "Summary" in output
+    assert "Nothing changed" in output

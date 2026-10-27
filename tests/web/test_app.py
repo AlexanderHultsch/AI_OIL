@@ -228,8 +228,10 @@ def serve_calls(monkeypatch: pytest.MonkeyPatch) -> dict:
 
 
 def test_serve_binds_loopback_on_the_default_port(
-    web_home: Path, serve_calls: dict, capsys: pytest.CaptureFixture[str]
+    web_home: Path, serve_calls: dict, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(serve, "_port_is_free", lambda port: True)
+
     assert main(["--home", str(web_home), "serve"]) == 0
 
     [call] = serve_calls["run"]
@@ -258,3 +260,46 @@ def test_serve_port_zero_picks_a_free_port(
     with socket.socket() as sock:  # the port was released again
         sock.bind(("127.0.0.1", call["port"]))
     assert call["app"].state.csrf.token
+
+
+def test_choose_port_prefers_the_default_port_when_it_is_free(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(serve, "_port_is_free", lambda port: port == 8765)
+
+    assert serve._choose_port(None) == 8765
+    assert capsys.readouterr().out == ""
+
+
+def test_choose_port_falls_back_to_a_free_port_when_the_default_is_busy(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(serve, "_port_is_free", lambda port: False)
+    monkeypatch.setattr(serve, "_free_port", lambda: 54321)
+
+    assert serve._choose_port(None) == 54321
+    assert capsys.readouterr().out == (
+        "Port 8765 is busy (is AI_OIL already running? Then use the browser tab that is already open)"
+        " — using port 54321 instead\n"
+    )
+
+
+def test_choose_port_zero_is_any_free_port_and_an_explicit_port_is_kept(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(serve, "_port_is_free", lambda port: False)  # must not matter
+    monkeypatch.setattr(serve, "_free_port", lambda: 54321)
+
+    assert serve._choose_port(0) == 54321
+    assert serve._choose_port(9123) == 9123
+    assert serve._choose_port(8765) == 8765
+    assert capsys.readouterr().out == ""
+
+
+def test_port_is_free_sees_a_listening_socket() -> None:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen()
+        busy = sock.getsockname()[1]
+        assert serve._port_is_free(busy) is False
+    assert serve._port_is_free(busy) is True

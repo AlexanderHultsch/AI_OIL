@@ -727,6 +727,7 @@ The CLI is the only interface in P1 and remains available afterwards for scripti
 | Command | Does |
 |---|---|
 | `oil init --name … --email … [--atlassian-account-id …]` | Creates the data folder, the database and "me" with identities |
+| `oil setup [--only STAGE] [--list]` | Interactive setup wizard: data folder, me, backup, Outlook, network, Jira/Confluence, SharePoint, final check (docs/installer_concept.md) |
 | `oil connector add TYPE NAME [--setting K=V]… [--token \| --token-stdin]` / `set NAME …` / `list` / `check [NAME] [--live]` / `enable NAME` / `disable NAME` | Manage connector instances; settings are validated by the connector; secrets go to Credential Manager only. `check --live` is the read-only acceptance test against the real systems (CON-6) |
 | `oil project add KEY "Name"` / `list`; `oil component add PROJECT NAME` / `list PROJECT` | Projects and components |
 | `oil issue create -p OIL -s "Summary" -d "Description" [--type …] [--parent …] [--priority P2] [--assignee …] [--due 2026-11-15] [--acceptance …] [--label …] [--component …]` | Create; prints the key |
@@ -752,7 +753,7 @@ The CLI is the only interface in P1 and remains available afterwards for scripti
 | ID | Requirement |
 |---|---|
 | UI-1 | FastAPI + Jinja2 templates + HTMX. No npm, no frontend build step. The app is served from the same Python process |
-| UI-2 | Listens on `127.0.0.1` only (configurable port), started by `oil serve`, which also opens the browser |
+| UI-2 | Listens on `127.0.0.1` only (configurable port, 8765 or a free one when busy), started by `oil serve`, which also opens the browser |
 | UI-3 | Every state-changing request carries a per-process CSRF token. Requests without it are rejected |
 | UI-4 | Look and feel are close to Jira: left navigation (projects, filters, My Inbox from P4), a top search bar that accepts OQL or plain text, and keyboard shortcuts (`c` create, `/` search, `j`/`k` move, `e` edit, `m` comment) |
 

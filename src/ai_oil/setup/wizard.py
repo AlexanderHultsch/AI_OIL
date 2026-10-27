@@ -10,6 +10,7 @@ from ai_oil.setup.stages_connectors import (
     OutlookStage,
     SharePointStage,
 )
+from ai_oil.setup.stages_finish import FinishStage
 
 STAGES: list[Stage] = [
     DataStage(),
@@ -19,6 +20,7 @@ STAGES: list[Stage] = [
     NetworkStage(),
     AtlassianStage(),
     SharePointStage(),
+    FinishStage(),
 ]
 
 _WELCOME = (
@@ -43,6 +45,28 @@ def _failed(stage: Stage, exc: AiOilError) -> StageResult:
     )
 
 
+def _rerun_stages(ctx: SetupContext) -> list[Stage]:
+    """Ask what to do on a data folder that is already set up; the answer selects the stages to run."""
+    console = ctx.console
+    finish = [stage for stage in STAGES if stage.name == "finish"]
+    areas = [stage for stage in STAGES if stage.name != "finish"]
+    mode = console.choose(
+        f"AI_OIL is already set up in {ctx.home}. What do you want to do?",
+        [
+            "Go through all stages again (your current values are offered)",
+            "Change one area",
+            "Only run the final check",
+        ],
+        default=0,
+    )
+    if mode == 0:
+        return list(STAGES)
+    if mode == 1:
+        area = console.choose("Which area?", [stage.title for stage in areas], default=0)
+        return [areas[area], *finish]
+    return finish
+
+
 def run_wizard(ctx: SetupContext, *, only: str | None = None) -> int:
     """Run all stages (or just `only`); returns 0 if no stage failed, else 1."""
     names = [stage.name for stage in STAGES]
@@ -53,6 +77,14 @@ def run_wizard(ctx: SetupContext, *, only: str | None = None) -> int:
     console = ctx.console
     for line in _WELCOME:
         console.say(line)
+
+    if only is None and (ctx.home / "config.toml").exists():
+        try:
+            selected = _rerun_stages(ctx)
+        except SkipStage:
+            console.heading("Summary")
+            console.say("Nothing changed")
+            return 0
 
     results: list[tuple[Stage, StageResult]] = []
     not_run: list[Stage] = []

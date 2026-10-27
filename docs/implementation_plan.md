@@ -83,7 +83,7 @@ Steps 5, 8, 13, 17 and 18 were split into sub-steps during execution (5a–c, 8a
 | I2 | `oil setup` framework (system probe, stages, `--only`, validation, idempotence) + stages data folder (OneDrive guard, OP-53), me, backup — done | `pytest tests/setup` |
 | I3 | Stages Outlook (classic/new detection, COM) and network (proxy, TLS probe) — done | `pytest tests/setup` |
 | I4 | Stages Jira/Confluence (URL normalisation, token, live lists) and SharePoint (OneDrive registry libraries) — done | `pytest tests/setup` |
-| I5 | Finish stage (live check, first project, summary), re-run behaviour | `pytest tests/setup && pytest` |
+| I5 | Finish stage (live check, first project, summary), re-run behaviour — done | `pytest tests/setup && pytest` |
 | I6 | `install.bat`, `start.bat`, `update.bat`, `uninstall.bat` + static checks; install guide rewritten around them | `pytest tests/test_batch_files.py && pytest && ruff check` |
 | 27–31 | P3 AI enrichment | per step |
 | 32–33 | P4 assistant | per step |

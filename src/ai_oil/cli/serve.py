@@ -19,8 +19,11 @@ def register(subparsers) -> None:
     serve.add_argument(
         "--port",
         type=int,
-        default=DEFAULT_PORT,
-        help=f"port on 127.0.0.1 (default {DEFAULT_PORT}, 0 = any free)",
+        default=None,
+        help=(
+            f"port on 127.0.0.1 (default {DEFAULT_PORT}, or a free one if {DEFAULT_PORT} is busy; "
+            "0 = any free)"
+        ),
     )
     serve.add_argument("--no-browser", action="store_true", help="do not open the browser")
     serve.set_defaults(func=run_serve)
@@ -32,8 +35,33 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
+def _port_is_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((HOST, port))
+        except OSError:
+            return False
+    return True
+
+
+def _choose_port(requested: int | None) -> int:
+    """0 gives any free port, an explicit number is used as is, None prefers the default port."""
+    if requested == 0:
+        return _free_port()
+    if requested is not None:
+        return requested
+    if _port_is_free(DEFAULT_PORT):
+        return DEFAULT_PORT
+    port = _free_port()
+    print(
+        f"Port {DEFAULT_PORT} is busy (is AI_OIL already running? "
+        f"Then use the browser tab that is already open) — using port {port} instead"
+    )
+    return port
+
+
 def run_serve(args: argparse.Namespace) -> int:
-    port = _free_port() if args.port == 0 else args.port
+    port = _choose_port(args.port)
     ctx = open_context(args)
     try:
         app = create_app(ctx.config, ctx.engine, port=port)

@@ -171,7 +171,7 @@ def test_outlook_new_outlook_declined_skips_the_stage_and_writes_nothing(
     assert factory.sessions == [] and _connectors(initialised_home) == []
 
     monkeypatch.setattr(wizard, "STAGES", [OutlookStage(session_factory=factory)])
-    ctx = make_ctx(initialised_home, ["n"], probe=probe)
+    ctx = make_ctx(initialised_home, ["1", "n"], probe=probe)  # the re-run menu, then the prompt
     assert run_wizard(ctx) == 0
     assert "Outlook  skipped" in ctx.console.output
     assert "- Outlook: skipped — run `oil setup --only outlook` later" in ctx.console.output
@@ -960,7 +960,7 @@ def test_atlassian_any_other_error_fails_the_stage_with_the_message(
     assert _connectors(initialised_home) == []
 
     monkeypatch.setattr(wizard, "STAGES", [stage])
-    ctx = make_ctx(initialised_home, FRESH_ANSWERS[:2])
+    ctx = make_ctx(initialised_home, ["1", *FRESH_ANSWERS[:2]])  # the re-run menu first
     ctx.console.secrets.append(TOKEN)
     assert run_wizard(ctx) == 1
     assert "Failed: HTTP 500 for /rest/api/3/myself" in ctx.console.output
