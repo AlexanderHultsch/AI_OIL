@@ -66,8 +66,8 @@ def test_connection_pragmas(engine: sqlalchemy.Engine) -> None:
 def test_second_upgrade_is_noop(engine: sqlalchemy.Engine) -> None:
     upgrade(engine)
     with engine.connect() as connection:
-        assert current_schema_version(connection) == 1
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == ["0001"]
+        assert current_schema_version(connection) == 2
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == ["0002"]
 
 
 def test_current_schema_version_without_table(tmp_path) -> None:
@@ -189,14 +189,10 @@ def test_source_version_revert_stays_visible_dm48(conn: sqlalchemy.Connection) -
     assert hashes == ["A", "B", "A"]
 
 
-def test_fts_prefix_match(conn: sqlalchemy.Connection) -> None:
-    conn.execute(
-        text(
-            "INSERT INTO search_doc(doc_kind, doc_id, title, body)"
-            " VALUES ('issue', 1, 'Clarify inductor lead time', 'Supplier quoted 26 weeks')"
-        )
-    )
-    found = (
-        conn.execute(text("SELECT doc_id FROM search_doc WHERE search_doc MATCH 'induct*'")).scalars().all()
-    )
-    assert [int(doc_id) for doc_id in found] == [1]
+def test_fts_prefix_match_on_trigger_maintained_docs(conn: sqlalchemy.Connection) -> None:
+    issue_id = conn.execute(text("SELECT id FROM issue WHERE key = 'OIL-1'")).scalar_one()
+    entry_id = conn.execute(text("SELECT id FROM source_entry")).scalar_one()
+    found = conn.execute(
+        text("SELECT doc_kind, CAST(doc_id AS INTEGER) FROM search_doc WHERE search_doc MATCH 'induct*'")
+    ).all()
+    assert {tuple(row) for row in found} == {("issue", issue_id), ("source_entry", entry_id)}
