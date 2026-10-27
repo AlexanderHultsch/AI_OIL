@@ -1,0 +1,3 @@
+{%- for component in components -%}
+<option value="{{ component.name }}"{% if component.name in selected %} selected{% endif %}>{{ component.name }}</option>
+{%- endfor -%}

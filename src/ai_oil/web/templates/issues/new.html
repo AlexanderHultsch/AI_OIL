@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Create issue — AI_OIL{% endblock %}
+{% block content %}
+<h1>Create issue</h1>
+{% if error %}{% set message = error %}{% include "fragments/error.html" %}{% endif %}
+<form class="create-form" action="/issues" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="create-project">Project</label>
+  <select id="create-project" name="project" required
+          hx-get="/projects/__project__/component-options" data-path-from-value="__project__"
+          hx-trigger="change" hx-target="#create-components" hx-swap="innerHTML">
+    {% for project in projects %}<option value="{{ project.key }}"{% if project.key == values.project %} selected{% endif %}>{{ project.key }} — {{ project.name }}</option>{% endfor %}
+  </select>
+  <label for="create-type">Type</label>
+  <select id="create-type" name="issue_type">
+    {% for issue_type in issue_types %}<option value="{{ issue_type }}"{% if issue_type == values.issue_type %} selected{% endif %}>{{ issue_type }}</option>{% endfor %}
+  </select>
+  <label for="create-summary">Summary</label>
+  <input type="text" id="create-summary" name="summary" value="{{ values.summary }}" maxlength="120" required autocomplete="off">
+  <label for="create-description">Description</label>
+  <textarea id="create-description" name="description" rows="8" required>{{ values.description }}</textarea>
+  <label for="create-priority">Priority</label>
+  <select id="create-priority" name="priority">
+    {% for priority in priorities %}<option value="{{ priority }}"{% if priority == values.priority %} selected{% endif %}>{{ priority }}</option>{% endfor %}
+  </select>
+  <label for="create-assignee">Assignee</label>
+  <select id="create-assignee" name="assignee">
+    <option value=""{% if not values.assignee %} selected{% endif %}>Unassigned</option>
+    {% for person in persons %}<option value="{{ person.id }}"{% if person.id|string == values.assignee %} selected{% endif %}>{{ person.display_name }}</option>{% endfor %}
+  </select>
+  <label for="create-due">Due</label>
+  <input type="date" id="create-due" name="due" value="{{ values.due }}">
+  <label for="create-labels">Labels</label>
+  <input type="text" id="create-labels" name="labels" value="{{ values.labels }}" placeholder="Comma-separated" autocomplete="off">
+  <label for="create-components">Components</label>
+  <select id="create-components" name="components" multiple size="4">
+    {% set selected = values.components %}{% include "issues/_component_options.html" %}
+  </select>
+  <label for="create-parent">Parent</label>
+  <input type="text" id="create-parent" name="parent" value="{{ values.parent }}" placeholder="Issue key, empty for none" autocomplete="off">
+  <label for="create-acceptance">Acceptance criteria</label>
+  <textarea id="create-acceptance" name="acceptance_criteria" rows="4">{{ values.acceptance_criteria }}</textarea>
+  <label for="create-reference">Link a source now</label>
+  <input type="text" id="create-reference" name="reference" value="{{ values.reference }}" placeholder="URL, key or path (optional)" autocomplete="off">
+  <div class="editor-buttons">
+    <button type="submit" class="primary">Create</button>
+    <a class="button" href="/issues">Cancel</a>
+  </div>
+</form>
+{% endblock %}

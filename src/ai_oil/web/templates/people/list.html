@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}People — AI_OIL{% endblock %}
+{% block content %}
+<h1>People</h1>
+<p>
+  {% if include_merged %}<a href="/people">Hide merged people</a>{% else %}<a href="/people?all=1">Show merged people</a>{% endif %}
+</p>
+<table>
+  <thead>
+    <tr><th class="num">Id</th><th>Name</th><th>Organisation</th><th>Identities</th></tr>
+  </thead>
+  <tbody>
+    {% for person, identities in rows %}
+    <tr id="person-{{ person.id }}">
+      <td class="num">{{ person.id }}</td>
+      <td>
+        {{ person.display_name }}
+        {% if person.is_me %}<span class="badge">me</span>{% endif %}
+        {% if person.merged_into_id is not none %}<span class="badge">merged into {{ names[person.merged_into_id] }}</span>{% endif %}
+      </td>
+      <td>{{ person.organisation or "" }}</td>
+      <td>
+        <ul class="identity-list">
+          {% for identity in identities %}<li>{{ identity.system }}: {{ identity.external_id }}</li>{% endfor %}
+        </ul>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<h2>Add person</h2>
+<form class="create-form" action="/people" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="person-name">Name</label>
+  <input type="text" id="person-name" name="name" autocomplete="off" required>
+  <label for="person-organisation">Organisation</label>
+  <input type="text" id="person-organisation" name="organisation" autocomplete="off">
+  <label for="person-emails">E-mail addresses</label>
+  <textarea id="person-emails" name="emails" rows="2" placeholder="Comma- or newline-separated"></textarea>
+  <label for="person-atlassian">Atlassian account id</label>
+  <input type="text" id="person-atlassian" name="atlassian" autocomplete="off">
+  <div class="editor-buttons"><button type="submit" class="primary">Add person</button></div>
+</form>
+<section class="merge-box">
+  <h2>Merge people</h2>
+  <form class="inline-form" action="/people/merge" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="merge-source">Merge</label>
+    <select id="merge-source" name="source" required>
+      {% for person in active %}<option value="{{ person.id }}">{{ person.display_name }} (#{{ person.id }})</option>{% endfor %}
+    </select>
+    <label for="merge-target">into</label>
+    <select id="merge-target" name="target" required>
+      {% for person in active %}<option value="{{ person.id }}">{{ person.display_name }} (#{{ person.id }})</option>{% endfor %}
+    </select>
+    <button type="submit">Review merge</button>
+  </form>
+</section>
+{% endblock %}

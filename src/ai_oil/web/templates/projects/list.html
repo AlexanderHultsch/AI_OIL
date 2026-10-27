@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Projects — AI_OIL{% endblock %}
+{% block content %}
+<h1>Projects</h1>
+<form class="inline-form" action="/projects" method="post" aria-label="Add project">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="text" name="key" placeholder="Key (e.g. OIL)" aria-label="Project key" maxlength="10" size="10" autocomplete="off" required>
+  <input type="text" name="name" placeholder="Name" aria-label="Project name" autocomplete="off" required>
+  <input type="text" name="description" placeholder="Description (optional)" aria-label="Project description" autocomplete="off">
+  <button type="submit" class="primary">Add project</button>
+</form>
+{% for row in rows %}
+<section class="project-block" id="project-{{ row.project.key }}">
+  <h2>
+    <span>{{ row.project.key }}</span>
+    <span>{{ row.project.name }}</span>
+    {% if row.project.archived %}<span class="badge">archived</span>{% endif %}
+  </h2>
+  {% if row.project.description %}<p class="muted">{{ row.project.description }}</p>{% endif %}
+  <table>
+    <thead>
+      <tr>{% for category in categories %}<th class="num">{{ category }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      <tr>{% for category in categories %}<td class="num">{{ row.counts[category] }}</td>{% endfor %}</tr>
+    </tbody>
+  </table>
+  <h3>Components</h3>
+  {% if row.components %}
+  <ul class="component-list">
+    {% for component in row.components %}
+    <li>{{ component.name }}{% if component.description %} <span class="muted">— {{ component.description }}</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="placeholder">No components.</p>
+  {% endif %}
+  <form class="inline-form" action="/projects/{{ row.project.key }}/components" method="post" aria-label="Add component to {{ row.project.key }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="text" name="name" placeholder="Component name" aria-label="Component name" autocomplete="off" required>
+    <input type="text" name="description" placeholder="Description (optional)" aria-label="Component description" autocomplete="off">
+    <button type="submit">Add component</button>
+  </form>
+  <form class="inline-form" action="/projects/{{ row.project.key }}/archive" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="archived" value="{{ 0 if row.project.archived else 1 }}">
+    <button type="submit">{{ "Unarchive" if row.project.archived else "Archive" }}</button>
+  </form>
+</section>
+{% else %}
+<p class="muted">No projects yet.</p>
+{% endfor %}
+{% endblock %}

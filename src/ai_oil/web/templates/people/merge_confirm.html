@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Merge people — AI_OIL{% endblock %}
+{% block content %}
+<h1>Merge people</h1>
+<dl class="merge-pair">
+  <dt>Merge away</dt>
+  <dd>{{ source.display_name }} (#{{ source.id }}){% if source.organisation %}, {{ source.organisation }}{% endif %}</dd>
+  <dt>Keep</dt>
+  <dd>{{ target.display_name }} (#{{ target.id }}){% if target.organisation %}, {{ target.organisation }}{% endif %}</dd>
+</dl>
+<p id="merge-fields">{{ fields }} issue field{{ "" if fields == 1 else "s" }} (assignee, reporter) will be re-pointed from {{ source.display_name }} to {{ target.display_name }}. Identities, comments and project leads move too. This cannot be undone.</p>
+<form class="inline-form" action="/people/merge" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="source" value="{{ source.id }}">
+  <input type="hidden" name="target" value="{{ target.id }}">
+  <input type="hidden" name="confirm" value="1">
+  <button type="submit" class="primary">Merge</button>
+  <a class="button" href="/people">Cancel</a>
+</form>
+{% endblock %}

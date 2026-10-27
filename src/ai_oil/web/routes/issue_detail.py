@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import sqlalchemy
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.responses import Response
 
 from ai_oil import timeutil
@@ -257,9 +257,15 @@ def _parsed(field: str, value: str) -> object:
 
 
 @router.get("/issues/{key}")
-def issue_detail(request: Request, key: str, conn: Annotated[sqlalchemy.Connection, Depends(db_read)]):
+def issue_detail(
+    request: Request,
+    key: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_read)],
+    link_error: Annotated[str | None, Query()] = None,
+):
     issue = issues.get_issue(conn, key)
     context = {
+        "link_error": link_error,
         **_context(conn, issue),
         **_side_context(conn, issue),
         **_links_context(conn, issue),

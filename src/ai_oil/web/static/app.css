@@ -82,8 +82,8 @@ button, .button {
   cursor: pointer;
 }
 button:hover, .button:hover { background: #ebecf0; text-decoration: none; }
-button.primary { color: #fff; background: var(--accent); border-color: var(--accent); }
-button.primary:hover { background: #0747a6; }
+button.primary, .button.primary { color: #fff; background: var(--accent); border-color: var(--accent); }
+button.primary:hover, .button.primary:hover { background: #0747a6; }
 
 input, select, textarea {
   padding: 6px 8px;
@@ -251,3 +251,21 @@ table.diff .diff_next { width: 1.5em; background: var(--panel); }
 table.diff .diff_add { background: #e3fcef; }
 table.diff .diff_chg { background: #fffae6; }
 table.diff .diff_sub { background: #ffebe6; }
+
+.topbar .button { margin-left: auto; padding: 4px 12px; }
+
+.create-form { display: grid; grid-template-columns: 160px minmax(0, 560px); gap: 8px 12px; align-items: start; }
+.create-form label { padding-top: 6px; font-weight: 600; color: var(--muted); }
+.create-form .editor-buttons { grid-column: 2; }
+
+.inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.inline-form input[type="text"], .inline-form textarea { flex: 1; min-width: 160px; }
+.inline-form textarea { height: 34px; }
+.project-block { margin: 0 0 20px; }
+.project-block h2 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px; font-size: 16px; }
+.component-list { margin: 4px 0 8px; padding-left: 18px; }
+.identity-list { margin: 0; padding: 0; list-style: none; }
+.merge-box { margin: 24px 0 0; }
+.merge-pair { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 2px 8px; margin: 0 0 16px; }
+.merge-pair dt { color: var(--muted); }
+.merge-pair dd { margin: 0; }

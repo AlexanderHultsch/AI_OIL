@@ -14,3 +14,10 @@ document.addEventListener("htmx:afterRequest", function (event) {
     other.setAttribute("aria-selected", other === tab ? "true" : "false");
   });
 });
+
+document.addEventListener("htmx:configRequest", function (event) {
+  var token = event.target.getAttribute ? event.target.getAttribute("data-path-from-value") : null;
+  if (token) {
+    event.detail.path = event.detail.path.replace(token, encodeURIComponent(event.target.value));
+  }
+});
