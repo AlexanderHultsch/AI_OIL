@@ -27,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5", "httpx>=0.27"]
+browser = ["playwright==1.63.0"]
 
 [project.scripts]
 oil = "ai_oil.cli.main:main"
@@ -55,7 +56,10 @@ ai_oil = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --import-mode=importlib"
-markers = ["performance: SRCH-9 timing tests (large dataset)"]
+markers = [
+    "performance: SRCH-9 timing tests (large dataset)",
+    "browser: real-browser end-to-end tests (needs the [browser] extra)",
+]
 
 [tool.ruff]
 line-length = 110

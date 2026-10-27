@@ -63,6 +63,7 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OP-32 | Custom fields per project (spec OI-6) | Not before a concrete need; then an `issue_field_value` table | decide (later) |
 | OP-33 | Semantic search with embeddings (spec OI-10) | Only if keyword search proves insufficient after P4 | decide (later) |
 | OP-34 | Outlook online archive, PST files and shared mailboxes (spec OI-2) | Today: Inbox + subfolders + Sent Items + extra folders. Revisit after OP-2 | decide (later) |
+| OP-39 | Which P1 operations stay CLI-only? Today: `oil init`, `oil connector add/set` (token entry), `oil restore` | Keep them CLI-only: setup, secrets and a destructive restore are deliberate one-off acts; everything else is in the browser | decide |
 
 ## 4. Future phases
 
