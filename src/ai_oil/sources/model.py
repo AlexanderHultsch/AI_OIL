@@ -181,11 +181,14 @@ class Connector(Protocol):
     Connectors are constructed as `ConnectorClass(config: ConnectorConfig, **backends)`. The backends are
     injectable system-access objects (COM, HTTP, file system) so tests run against fixtures (CON-6).
     Read-only connectors declare `action_class` "A" (CON-1).
+    `max_parallel` caps concurrent fetches per connector (SYNC-3); the sync engine treats a missing
+    attribute as 1.
     """
 
     type: ClassVar[str]
     object_types: ClassVar[frozenset[str]]
     action_class: ClassVar[str]
+    max_parallel: ClassVar[int]
 
     def check(self) -> HealthReport: ...
 
