@@ -24,11 +24,30 @@ def local(iso: str) -> str:
     return timeutil.parse_iso(iso).astimezone().strftime("%Y-%m-%d %H:%M")
 
 
+def plain_header(cell: str) -> str:
+    """The header text without its sort link and arrow (UI-13)."""
+    return re.sub(r"\s*[▲▼]$", "", re.sub(r"<[^>]+>", "", cell).strip())
+
+
+def plain_cell(cell: str) -> str:
+    """The shown value of an inline-edit cell (UI-12): the selected option or the date input's value."""
+    selected = re.search(r"<option[^>]* selected[^>]*>(.*?)</option>", cell, re.DOTALL)
+    if selected is not None:
+        return selected.group(1)
+    date_input = re.search(r'<input type="date"[^>]* value="([^"]*)"', cell)
+    if date_input is not None:
+        return date_input.group(1) or "—"
+    return cell
+
+
 def table(page: str) -> tuple[list[str], dict[str, dict[str, str]], dict[str, dict[str, str]]]:
-    """Headers, then per issue key the inner HTML and the tag attributes of every cell by header."""
+    """Headers, then per issue key the inner HTML and the tag attributes of every cell by header.
+
+    Sort links in the headers and the inline-edit controls in the cells are reduced to what they show.
+    """
     head = re.search(r"<thead>(.*?)</thead>", page, re.DOTALL)
     assert head is not None, "no table"
-    headers = re.findall(r"<th[^>]*>(.*?)</th>", head.group(1))
+    headers = [plain_header(h) for h in re.findall(r"<th[^>]*>(.*?)</th>", head.group(1), re.DOTALL)]
     cells: dict[str, dict[str, str]] = {}
     attributes: dict[str, dict[str, str]] = {}
     body = re.search(r"<tbody>(.*?)</tbody>", page, re.DOTALL)
@@ -38,7 +57,7 @@ def table(page: str) -> tuple[list[str], dict[str, dict[str, str]], dict[str, di
         assert len(found) == len(headers)
         key = re.search(r'href="/issues/([A-Z]+-\d+)"', row)
         assert key is not None
-        cells[key.group(1)] = {h: c[1].strip() for h, c in zip(headers, found, strict=True)}
+        cells[key.group(1)] = {h: plain_cell(c[1].strip()) for h, c in zip(headers, found, strict=True)}
         attributes[key.group(1)] = {h: c[0].strip() for h, c in zip(headers, found, strict=True)}
     return headers, cells, attributes
 

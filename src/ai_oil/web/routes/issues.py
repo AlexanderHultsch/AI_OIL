@@ -1,26 +1,47 @@
-"""Issue navigator and saved filters, read-only (UI-4, UI-10, UI-14)."""
+"""Issue navigator and saved filters: chips, sorting, inline edits, filter management (UI-10 .. UI-14)."""
 
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Annotated
+from urllib.parse import urlencode
 
 import sqlalchemy
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from sqlalchemy import bindparam, text
+from starlette.responses import RedirectResponse, Response
 
 from ai_oil import timeutil
-from ai_oil.domain import issues
+from ai_oil.domain import issues, people, projects
+from ai_oil.errors import NotFoundError, ValidationError
+from ai_oil.governance import audit
 from ai_oil.search import oql, saved_filters
 from ai_oil.search.compiler import search_issues
 from ai_oil.search.saved_filters import COLUMNS, DEFAULT_COLUMNS, SavedFilter
-from ai_oil.web.deps import db_read
-from ai_oil.web.rendering import render
+from ai_oil.web.deps import db_read, db_write
+from ai_oil.web.rendering import is_htmx, render
 
 router = APIRouter()
 
 MAX_ROWS = 500
 DEFAULT_FILTER = "All open issues"
+
+SORTABLE_COLUMNS = (
+    "key",
+    "type",
+    "summary",
+    "status",
+    "priority",
+    "assignee",
+    "reporter",
+    "due",
+    "updated",
+    "created",
+)  # UI-13: the columns whose id is also an OQL ORDER BY field
+INLINE_FIELDS = ("status", "priority", "assignee", "due")  # UI-12
+ME_CHIP = "@me"
+UNASSIGNED_CHIP = "@unassigned"
 
 _ID_CHUNK = 500
 _OQL_CHARACTERS = re.compile(r"[=~<>!]")
@@ -126,15 +147,55 @@ def _run(conn: sqlalchemy.Connection, query: str) -> list[issues.Issue]:
     return search_issues(conn, query, limit=MAX_ROWS + 1)
 
 
+def _split_columns(values: Iterable[str] | None) -> list[str]:
+    """Column ids from repeated and/or comma-separated form or query values."""
+    parts: list[str] = []
+    for value in values or ():
+        parts.extend(part.strip() for part in value.split(",") if part.strip())
+    return parts
+
+
+def _sort_links(query: str, columns: Sequence[str]) -> dict[str, dict[str, str | None]]:
+    """Per sortable shown column: the link that sorts by it and the arrow of the current sort (UI-13)."""
+    try:
+        parsed = oql.parse(query)
+    except oql.OqlSyntaxError:
+        return {}
+    first = parsed.order_by[0] if parsed.order_by else None
+    links: dict[str, dict[str, str | None]] = {}
+    for column in columns:
+        if column not in SORTABLE_COLUMNS:
+            continue
+        current = first.direction if first is not None and first.field.lower() == column else None
+        direction = "desc" if current == "asc" else "asc"
+        params = {"q": oql.to_text(oql.with_order(parsed, column, direction))}
+        if tuple(columns) != DEFAULT_COLUMNS:
+            params["columns"] = ",".join(columns)
+        arrow = {"asc": "▲", "desc": "▼"}.get(current or "")
+        links[column] = {"href": "/issues?" + urlencode(params), "arrow": arrow}
+    return links
+
+
+def _edit_context(conn: sqlalchemy.Connection, columns: Sequence[str]) -> dict[str, object]:
+    """What `issues/_row.html` needs to render the inline controls (UI-12)."""
+    return {
+        "columns": columns,
+        "persons": people.list_persons(conn),
+        "transitions": issues.TRANSITIONS,
+        "priorities": issues.PRIORITIES,
+    }
+
+
 @router.get("/issues")
 def issue_list(
     request: Request,
     conn: Annotated[sqlalchemy.Connection, Depends(db_read)],
     q: Annotated[str | None, Query()] = None,
     filter_ref: Annotated[str | None, Query(alias="filter")] = None,
-    columns: Annotated[str | None, Query()] = None,
+    columns: Annotated[list[str] | None, Query()] = None,
 ):
     saved_filters.ensure_built_ins(conn)
+    requested = ",".join(_split_columns(columns)) or None
     active: SavedFilter | None = None
     plain = (q or "").strip()
     found: list[issues.Issue] = []
@@ -159,11 +220,21 @@ def issue_list(
         else:
             error = oql.format_error(query, exc)
     shown = found[:MAX_ROWS]
+    shown_columns = _columns(requested, active.columns if active else DEFAULT_COLUMNS)
     context = {
         "query": query,
         "active_filter": active,
-        "columns": _columns(columns, active.columns if active else DEFAULT_COLUMNS),
+        **_edit_context(conn, shown_columns),
         "column_labels": COLUMNS,
+        "all_columns": COLUMNS,
+        "sort": _sort_links(query, shown_columns),
+        "chips": {
+            "projects": projects.list_projects(conn),
+            "statuses": issues.STATUSES,
+            "persons": people.list_persons(conn),
+            "priorities": issues.PRIORITIES,
+            "labels": projects.list_labels(conn),
+        },
         "rows": _rows(conn, shown),
         "count": len(shown),
         "truncated": len(found) > MAX_ROWS,
@@ -181,3 +252,196 @@ def filter_list(request: Request, conn: Annotated[sqlalchemy.Connection, Depends
         "filters/list.html",
         {"filters": saved_filters.list_filters(conn), "nav_active": "filters"},
     )
+
+
+def _value(kind: str, text_: str) -> oql.Value:
+    return oql.Value(kind, text_, 0)
+
+
+def _membership(field: str, values: list[oql.Value]) -> oql.Clause:
+    if len(values) == 1:
+        return oql.Clause(field, "=", (values[0],), 0)
+    return oql.Clause(field, "in", tuple(values), 0)
+
+
+def compose_chip_query(
+    project: str | None,
+    statuses: Iterable[str],
+    assignee: str | None,
+    priorities: Iterable[str],
+    label: str | None,
+) -> str:
+    """The OQL the quick-filter chips stand for (UI-11); no chip chosen gives the default filter."""
+    clauses: list[oql.Clause] = []
+    if project and project.strip():
+        clauses.append(oql.Clause("project", "=", (_value("word", project.strip()),), 0))
+    chosen = list(dict.fromkeys(s.strip() for s in statuses if s.strip()))
+    if chosen:
+        clauses.append(_membership("status", [_value("string", s) for s in chosen]))
+    if assignee and assignee.strip():
+        who = assignee.strip()
+        if who == ME_CHIP:
+            clauses.append(oql.Clause("assignee", "=", (_value("function", "me"),), 0))
+        elif who == UNASSIGNED_CHIP:
+            clauses.append(oql.Clause("assignee", "is empty", (), 0))
+        else:  # a person id; anything else is taken as a name or e-mail address
+            kind = "word" if who.isdigit() else "string"
+            clauses.append(oql.Clause("assignee", "=", (_value(kind, who),), 0))
+    ranked = list(dict.fromkeys(p.strip() for p in priorities if p.strip()))
+    if ranked:
+        clauses.append(_membership("priority", [_value("word", p) for p in ranked]))
+    if label and label.strip():
+        clauses.append(oql.Clause("label", "=", (_value("string", label.strip()),), 0))
+    if not clauses:
+        return saved_filters.BUILT_INS[DEFAULT_FILTER]
+    where: oql.Expr = clauses[0] if len(clauses) == 1 else oql.And(tuple(clauses))
+    return oql.to_text(oql.Query(where, (oql.OrderItem("updated", "desc", 0),)))
+
+
+@router.get("/issues/build")
+def build_query(
+    project: Annotated[str | None, Query()] = None,
+    status: Annotated[list[str] | None, Query()] = None,
+    assignee: Annotated[str | None, Query()] = None,
+    priority: Annotated[list[str] | None, Query()] = None,
+    label: Annotated[str | None, Query()] = None,
+) -> Response:
+    """Turn the quick-filter chips into OQL and show it in the navigator (UI-11)."""
+    query = compose_chip_query(project, status or (), assignee, priority or (), label)
+    return RedirectResponse("/issues?" + urlencode({"q": query}), status_code=303)
+
+
+def _assignee_id(value: str) -> int | None:
+    value = value.strip()
+    if not value:
+        return None
+    if not value.isdigit():
+        raise ValidationError("assignee must be a person id")
+    return int(value)
+
+
+def _due_date(value: str) -> date | None:
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValidationError(f"due must be a date (YYYY-MM-DD), got {value!r}") from None
+
+
+def _row_response(
+    request: Request,
+    conn: sqlalchemy.Connection,
+    issue: issues.Issue,
+    columns: str | None,
+    *,
+    reason_for: str | None = None,
+) -> Response:
+    context = {
+        **_edit_context(conn, _columns(columns, DEFAULT_COLUMNS)),
+        "row": _rows(conn, [issue])[0],
+        "reason_for": reason_for,
+    }
+    return render(request, "issues/_row.html", context)
+
+
+@router.post("/issues/{key}/inline/{field}")
+def inline_edit(
+    request: Request,
+    key: str,
+    field: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    value: Annotated[str, Form()] = "",
+    reason: Annotated[str | None, Form()] = None,
+    columns: Annotated[str | None, Form()] = None,
+) -> Response:
+    """Change status, priority, assignee or due date from the table and return the new row (UI-12)."""
+    if field not in INLINE_FIELDS:
+        raise NotFoundError(f"unknown inline field {field!r}")
+    me = people.get_me(conn)
+    before = issues.get_issue(conn, key)
+    reason_text = (reason or "").strip()
+    detail: dict[str, object] = {field: value.strip() or None, "via": "web"}
+    if field == "status":
+        needs_reason = value in ("Blocked", "Cancelled") and value in issues.TRANSITIONS[before.status]
+        if needs_reason and not reason_text:
+            return _row_response(request, conn, before, columns, reason_for=value)
+        after = issues.transition_issue(conn, key, value, actor_id=me.id, reason=reason_text or None)
+        if reason_text:
+            detail["reason"] = reason_text
+    elif field == "priority":
+        after = issues.update_issue(conn, key, {"priority": value}, actor_id=me.id)
+    elif field == "assignee":
+        after = issues.update_issue(conn, key, {"assignee_id": _assignee_id(value)}, actor_id=me.id)
+    else:
+        after = issues.update_issue(conn, key, {"due_date": _due_date(value)}, actor_id=me.id)
+    if after != before:
+        audit.log(conn, "issue.edit", "B", actor_type="user", target=before.key, detail=detail)
+    return _row_response(request, conn, after, columns)
+
+
+@router.post("/filters")
+def filter_create(
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    name: Annotated[str, Form()] = "",
+    query: Annotated[str, Form()] = "",
+    columns: Annotated[list[str] | None, Form()] = None,
+) -> Response:
+    """Save the current query as a filter (UI-13, SRCH-8)."""
+    chosen = _split_columns(columns)
+    created = saved_filters.create_filter(conn, name, query, chosen or None)
+    audit.log(
+        conn,
+        "filter.create",
+        "B",
+        actor_type="user",
+        target=str(created.id),
+        detail={"name": created.name, "query": created.query, "columns": list(created.columns), "via": "web"},
+    )
+    return RedirectResponse(f"/issues?filter={created.id}", status_code=303)
+
+
+@router.post("/filters/{filter_id}/delete")
+def filter_delete(
+    filter_id: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+) -> Response:
+    current = saved_filters.get_filter(conn, filter_id)
+    saved_filters.delete_filter(conn, current.id)
+    audit.log(
+        conn,
+        "filter.delete",
+        "B",
+        actor_type="user",
+        target=str(current.id),
+        detail={"name": current.name, "via": "web"},
+    )
+    return RedirectResponse("/filters", status_code=303)
+
+
+@router.post("/filters/{filter_id}/columns")
+def filter_columns(
+    request: Request,
+    filter_id: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    columns: Annotated[list[str] | None, Form()] = None,
+) -> Response:
+    """Store the chosen column set in the filter (SRCH-8)."""
+    chosen = _split_columns(columns)
+    if not chosen:
+        raise ValidationError("choose at least one column")
+    current = saved_filters.get_filter(conn, filter_id)
+    updated = saved_filters.update_filter(conn, current.id, columns=chosen)
+    audit.log(
+        conn,
+        "filter.update",
+        "B",
+        actor_type="user",
+        target=str(updated.id),
+        detail={"name": updated.name, "columns": list(updated.columns), "via": "web"},
+    )
+    url = f"/issues?filter={updated.id}"
+    if is_htmx(request):  # an XHR would swallow a 303, so htmx is sent on by header
+        return Response(status_code=200, headers={"HX-Redirect": url})
+    return RedirectResponse(url, status_code=303)

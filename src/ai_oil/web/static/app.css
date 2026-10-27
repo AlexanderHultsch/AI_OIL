@@ -124,3 +124,13 @@ table.issues td.summary { max-width: 480px; }
   border-radius: 3px;
 }
 code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+
+.chips { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin: 0 0 12px; }
+.query-tools { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; margin: 0 0 12px; }
+.save-filter { display: flex; gap: 8px; }
+.columns-chooser summary { cursor: pointer; padding: 6px 0; }
+.columns-chooser label { display: inline-block; margin: 0 12px 6px 0; }
+th a.sort { color: inherit; }
+.sort-arrow { color: var(--accent); }
+table.issues select, table.issues input[type="date"] { padding: 2px 4px; }
+.inline-reason { display: flex; gap: 4px; }

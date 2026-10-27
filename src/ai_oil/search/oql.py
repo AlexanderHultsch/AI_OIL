@@ -321,3 +321,66 @@ class _Parser:
 def parse(query: str) -> Query:
     """Parse OQL text into an AST; raises OqlSyntaxError with the offending position (SRCH-4)."""
     return _Parser(query).parse()
+
+
+def _is_bare_word(text: str) -> bool:
+    return (
+        bool(text)
+        and text[0] not in "+-"
+        and all(ch in _WORD_CHARS for ch in text)
+        and text.upper() not in _NOT_A_VALUE
+    )
+
+
+def _quote(text: str) -> str:
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _value_text(value: Value) -> str:
+    if value.kind == "function":
+        return f"{value.text}({', '.join(_value_text(arg) for arg in value.args)})"
+    if value.kind == "word" and _is_bare_word(value.text):
+        return value.text
+    if value.kind == "relative":
+        return value.text
+    return _quote(value.text)
+
+
+def _clause_text(clause: Clause) -> str:
+    if clause.op in ("is empty", "is not empty"):
+        return f"{clause.field} {clause.op.upper()}"
+    if clause.op in ("in", "not in"):
+        return f"{clause.field} {clause.op.upper()} ({', '.join(_value_text(v) for v in clause.values)})"
+    return f"{clause.field} {clause.op} {_value_text(clause.values[0])}"
+
+
+def _expr_text(expr: Expr) -> str:
+    if isinstance(expr, Clause):
+        return _clause_text(expr)
+    if isinstance(expr, Not):
+        inner = _expr_text(expr.item)
+        return f"NOT ({inner})" if isinstance(expr.item, (And, Or)) else f"NOT {inner}"
+    joiner = " AND " if isinstance(expr, And) else " OR "
+    parts = []
+    for item in expr.items:
+        text = _expr_text(item)
+        parts.append(f"({text})" if isinstance(expr, And) and isinstance(item, Or) else text)
+    return joiner.join(parts)
+
+
+def to_text(query: Query) -> str:
+    """Canonical OQL for an AST; `parse(to_text(q))` yields `q` again, apart from positions."""
+    parts = []
+    if query.where is not None:
+        parts.append(_expr_text(query.where))
+    if query.order_by:
+        items = ", ".join(
+            item.field + (" DESC" if item.direction.lower() == "desc" else "") for item in query.order_by
+        )
+        parts.append(f"ORDER BY {items}")
+    return " ".join(parts)
+
+
+def with_order(query: Query, field: str, direction: str) -> Query:
+    """A copy of `query` ordered by exactly one field (UI-13)."""
+    return Query(query.where, (OrderItem(field, direction.lower(), 0),))

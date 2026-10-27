@@ -1,30 +1,15 @@
 <table class="issues">
   <thead>
     <tr>
-      {% for column in columns %}<th>{{ column_labels[column] }}</th>{% endfor %}
+      {% for column in columns %}<th>
+        {%- if column in sort %}<a class="sort" href="{{ sort[column].href }}">{{ column_labels[column] }}</a>{% if sort[column].arrow %} <span class="sort-arrow">{{ sort[column].arrow }}</span>{% endif %}
+        {%- else %}{{ column_labels[column] }}{% endif -%}
+      </th>{% endfor %}
     </tr>
   </thead>
   <tbody>
     {% for row in rows %}
-    {% set issue = row.issue %}
-    <tr>
-      {% for column in columns %}
-      {% if column == "key" %}<td class="key"><a href="/issues/{{ issue.key }}">{{ issue.key }}</a></td>
-      {% elif column == "type" %}<td>{{ issue.issue_type }}</td>
-      {% elif column == "summary" %}<td class="summary"><a href="/issues/{{ issue.key }}">{{ issue.summary }}</a></td>
-      {% elif column == "status" %}<td>{{ issue.status }}</td>
-      {% elif column == "priority" %}<td>{{ issue.priority }}</td>
-      {% elif column == "assignee" %}<td>{{ row.assignee or "—" }}</td>
-      {% elif column == "reporter" %}<td>{{ row.reporter or "—" }}</td>
-      {% elif column == "due" %}<td{% if row.overdue %} class="overdue"{% endif %}>{{ row.due or "—" }}</td>
-      {% elif column == "updated" %}<td>{{ row.updated }}</td>
-      {% elif column == "created" %}<td>{{ row.created }}</td>
-      {% elif column == "labels" %}<td>{{ issue.labels|join(", ") }}</td>
-      {% elif column == "sources" %}<td class="num">{{ row.sources }}</td>
-      {% elif column == "source_changed" %}<td>{{ row.source_changed or "—" }}{% if row.source_errors %} <span class="fetch-error" title="{{ row.source_errors }} source{{ "" if row.source_errors == 1 else "s" }} with fetch errors">⚠</span>{% endif %}</td>
-      {% endif %}
-      {% endfor %}
-    </tr>
+    {% include "issues/_row.html" %}
     {% endfor %}
   </tbody>
 </table>

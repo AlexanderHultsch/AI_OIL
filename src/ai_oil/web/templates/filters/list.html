@@ -4,13 +4,19 @@
 <h1>Filters</h1>
 <table class="filters">
   <thead>
-    <tr><th>Name</th><th>Query</th></tr>
+    <tr><th>Name</th><th>Query</th><th></th></tr>
   </thead>
   <tbody>
     {% for filter in filters %}
     <tr>
       <td><a href="/issues?filter={{ filter.id }}">{{ filter.name }}</a>{% if filter.built_in %} <span class="badge">built-in</span>{% endif %}</td>
       <td><code>{{ filter.query }}</code></td>
+      <td>{% if not filter.built_in %}
+        <form action="/filters/{{ filter.id }}/delete" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Delete</button>
+        </form>
+      {% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>

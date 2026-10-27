@@ -2,6 +2,29 @@
 {% block title %}Issues — AI_OIL{% endblock %}
 {% block content %}
 <h1>Issues{% if active_filter %} <span class="muted">· {{ active_filter.name }}</span>{% endif %}</h1>
+<form class="chips" action="/issues/build" method="get" aria-label="Quick filters">
+  <select name="project" aria-label="Project">
+    <option value="">Project: all</option>
+    {% for project in chips.projects %}<option value="{{ project.key }}">{{ project.key }} — {{ project.name }}</option>{% endfor %}
+  </select>
+  <select name="status" aria-label="Status" multiple size="3" title="Status (several allowed)">
+    {% for status in chips.statuses %}<option value="{{ status }}">{{ status }}</option>{% endfor %}
+  </select>
+  <select name="assignee" aria-label="Assignee">
+    <option value="">Assignee: all</option>
+    <option value="@me">Me</option>
+    <option value="@unassigned">(unassigned)</option>
+    {% for person in chips.persons %}<option value="{{ person.id }}">{{ person.display_name }}</option>{% endfor %}
+  </select>
+  <select name="priority" aria-label="Priority" multiple size="3" title="Priority (several allowed)">
+    {% for priority in chips.priorities %}<option value="{{ priority }}">{{ priority }}</option>{% endfor %}
+  </select>
+  <select name="label" aria-label="Label">
+    <option value="">Label: all</option>
+    {% for label in chips.labels %}<option value="{{ label.name }}">{{ label.name }}</option>{% endfor %}
+  </select>
+  <button type="submit">Apply chips</button>
+</form>
 <form class="oql-form" action="/issues" method="get">
   <input type="text" name="q" value="{{ query }}" aria-label="OQL query" autocomplete="off" spellcheck="false">
   <button class="primary" type="submit">Search</button>
@@ -9,6 +32,28 @@
 {% if error %}
 <pre class="oql-error">{{ error }}</pre>
 {% else %}
+<div class="query-tools">
+  <form class="save-filter" action="/filters" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="query" value="{{ query }}">
+    <input type="hidden" name="columns" value="{{ columns|join(",") }}">
+    <input type="text" name="name" placeholder="Filter name" aria-label="Filter name" autocomplete="off" required>
+    <button type="submit">Save as filter</button>
+  </form>
+  {% if active_filter %}
+  <details class="columns-chooser">
+    <summary>Columns</summary>
+    <form action="/issues" method="get">
+      <input type="hidden" name="filter" value="{{ active_filter.id }}">
+      {% for id, label in all_columns.items() %}
+      <label><input type="checkbox" name="columns" value="{{ id }}"{% if id in columns %} checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+      <button type="submit">Apply</button>
+      <button type="button" hx-post="/filters/{{ active_filter.id }}/columns" hx-include="closest form">Save to filter</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
 <p class="result-count muted">{{ count }} issue{{ "" if count == 1 else "s" }}</p>
 {% if truncated %}<p class="note">{{ overflow_note }}</p>{% endif %}
 <div id="issue-table">

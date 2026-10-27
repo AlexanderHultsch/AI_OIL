@@ -1,0 +1,46 @@
+{% set issue = row.issue %}
+{% set extra = {"columns": columns|join(",")}|tojson %}
+{% set post = "/issues/" ~ issue.key ~ "/inline/" %}
+<tr>
+  {% for column in columns %}
+  {% if column == "key" %}<td class="key"><a href="/issues/{{ issue.key }}">{{ issue.key }}</a></td>
+  {% elif column == "type" %}<td>{{ issue.issue_type }}</td>
+  {% elif column == "summary" %}<td class="summary"><a href="/issues/{{ issue.key }}">{{ issue.summary }}</a></td>
+  {% elif column == "status" %}<td>
+    {%- if reason_for %}
+    <form class="inline-reason" hx-post="{{ post }}status" hx-target="closest tr" hx-swap="outerHTML">
+      <input type="hidden" name="value" value="{{ reason_for }}">
+      <input type="hidden" name="columns" value="{{ columns|join(",") }}">
+      <input type="text" name="reason" placeholder="Reason for {{ reason_for }}" aria-label="Reason" autocomplete="off" required>
+      <button type="submit">Set</button>
+    </form>
+    {%- else %}
+    <select name="value" aria-label="Status" hx-post="{{ post }}status" hx-trigger="change" hx-target="closest tr" hx-swap="outerHTML" hx-vals='{{ extra }}'>
+      <option value="{{ issue.status }}" selected>{{ issue.status }}</option>
+      {% for status in transitions[issue.status] %}<option value="{{ status }}">{{ status }}</option>{% endfor %}
+    </select>
+    {%- endif %}
+  </td>
+  {% elif column == "priority" %}<td>
+    <select name="value" aria-label="Priority" hx-post="{{ post }}priority" hx-trigger="change" hx-target="closest tr" hx-swap="outerHTML" hx-vals='{{ extra }}'>
+      {% for priority in priorities %}<option value="{{ priority }}"{% if priority == issue.priority %} selected{% endif %}>{{ priority }}</option>{% endfor %}
+    </select>
+  </td>
+  {% elif column == "assignee" %}<td>
+    <select name="value" aria-label="Assignee" hx-post="{{ post }}assignee" hx-trigger="change" hx-target="closest tr" hx-swap="outerHTML" hx-vals='{{ extra }}'>
+      <option value=""{% if issue.assignee_id is none %} selected{% endif %}>—</option>
+      {% for person in persons %}<option value="{{ person.id }}"{% if person.id == issue.assignee_id %} selected{% endif %}>{{ person.display_name }}</option>{% endfor %}
+    </select>
+  </td>
+  {% elif column == "reporter" %}<td>{{ row.reporter or "—" }}</td>
+  {% elif column == "due" %}<td{% if row.overdue %} class="overdue"{% endif %}>
+    <input type="date" name="value" value="{{ row.due or "" }}" aria-label="Due date" hx-post="{{ post }}due" hx-trigger="change" hx-target="closest tr" hx-swap="outerHTML" hx-vals='{{ extra }}'>
+  </td>
+  {% elif column == "updated" %}<td>{{ row.updated }}</td>
+  {% elif column == "created" %}<td>{{ row.created }}</td>
+  {% elif column == "labels" %}<td>{{ issue.labels|join(", ") }}</td>
+  {% elif column == "sources" %}<td class="num">{{ row.sources }}</td>
+  {% elif column == "source_changed" %}<td>{{ row.source_changed or "—" }}{% if row.source_errors %} <span class="fetch-error" title="{{ row.source_errors }} source{{ "" if row.source_errors == 1 else "s" }} with fetch errors">⚠</span>{% endif %}</td>
+  {% endif %}
+  {% endfor %}
+</tr>
