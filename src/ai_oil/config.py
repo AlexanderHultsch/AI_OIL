@@ -1,6 +1,8 @@
 """Configuration and data folder. Paths and settings only, never secrets (GOV-8)."""
 
+import json
 import os
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -143,3 +145,71 @@ def write_default_config(home: Path) -> Path:
     if not config_path.exists():
         config_path.write_text(CONFIG_TEMPLATE, encoding="utf-8")
     return config_path
+
+
+_TOML_NAME = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def _toml_literal(value: str | int | bool) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    raise ConfigError(f"unsupported config value type {type(value).__name__}")
+
+
+def set_value(home: Path, section: str, key: str, value: str | int | bool) -> None:
+    """Set `key` in `[section]` of our own `config.toml`, leaving comments and all other lines untouched.
+
+    The `key = …` line inside the section is replaced, or appended to the section (or the section is
+    appended to the file). The result must parse and read back as `value`, otherwise nothing is written.
+    """
+    if not _TOML_NAME.fullmatch(section) or not _TOML_NAME.fullmatch(key):
+        raise ConfigError(f"invalid config key [{section}] {key}")
+    config_path = home / "config.toml"
+    if not config_path.is_file():
+        raise ConfigError(f"AI_OIL is not initialised at {home} — run `oil init`")
+    try:
+        raw = config_path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"invalid config file {config_path}: {exc}") from exc
+
+    eol = "\r\n" if "\r\n" in raw else "\n"
+    lines = raw.splitlines()
+    new_line = f"{key} = {_toml_literal(value)}"
+    header = re.compile(rf"\s*\[{re.escape(section)}\]\s*(#.*)?")
+    key_line = re.compile(rf"\s*{re.escape(key)}\s*=")
+    start = next((i for i, line in enumerate(lines) if header.fullmatch(line)), None)
+    if start is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines += [f"[{section}]", new_line]
+    else:
+        end = next((i for i in range(start + 1, len(lines)) if lines[i].lstrip().startswith("[")), len(lines))
+        hit = next((i for i in range(start + 1, end) if key_line.match(lines[i])), None)
+        if hit is not None:
+            lines[hit] = new_line
+        else:
+            last = end
+            while last > start + 1 and (
+                not lines[last - 1].strip() or lines[last - 1].lstrip().startswith("#")
+            ):
+                last -= 1
+            lines.insert(last, new_line)
+
+    text = eol.join(lines) + eol
+    try:
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"refusing to write an invalid config file {config_path}: {exc}") from exc
+    written = parsed.get(section, {}).get(key) if isinstance(parsed.get(section), dict) else None
+    if written != value or isinstance(written, bool) != isinstance(value, bool):
+        raise ConfigError(
+            f"config key {section}.{key} would not read back as written — {config_path} unchanged"
+        )
+
+    temp = config_path.with_name(config_path.name + ".tmp")
+    temp.write_bytes(text.encode("utf-8"))
+    os.replace(temp, config_path)

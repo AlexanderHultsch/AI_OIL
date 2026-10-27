@@ -95,6 +95,31 @@ def create_person(
     return get_person(conn, person_id)
 
 
+def update_person(
+    conn: sqlalchemy.Connection,
+    person_id: int,
+    *,
+    display_name: str | None = None,
+    organisation: str | None = None,
+) -> Person:
+    """Change the display name and/or organisation; a field left as None stays unchanged."""
+    current = get_person(conn, person_id)
+    name = current.display_name
+    if display_name is not None:
+        name = display_name.strip()
+        if not name:
+            raise ValidationError("display name must not be blank")
+    conn.execute(
+        text("UPDATE person SET display_name = :name, organisation = :organisation WHERE id = :id"),
+        {
+            "name": name,
+            "organisation": organisation if organisation is not None else current.organisation,
+            "id": person_id,
+        },
+    )
+    return get_person(conn, person_id)
+
+
 def get_person(conn: sqlalchemy.Connection, person_id: int) -> Person:
     row = (
         conn.execute(text(f"SELECT {_PERSON_COLUMNS} FROM person WHERE id = :id"), {"id": person_id})

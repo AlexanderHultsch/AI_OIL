@@ -80,7 +80,7 @@ Steps 5, 8, 13, 17 and 18 were split into sub-steps during execution (5a–c, 8a
 | 26b | Browser end-to-end test in Chromium (P2 exit criteria: P1 acceptance repeated without the CLI) | `pytest tests/e2e/test_p2_browser.py && pytest && ruff check` |
 | 26c | Note editing, per-connector sync, backup now, automatic backup after web syncs | `pytest tests/web && pytest -m browser tests/e2e/test_p2_browser.py && pytest` |
 | I1 | `truststore`: AI_OIL trusts the Windows certificate store (config switch, `ca_bundle` still overrides) | `pytest tests/test_truststore.py tests/connectors/test_atlassian.py` |
-| I2 | `oil setup` framework (system probe, stages, `--only`, validation, idempotence) + stages data folder (OneDrive guard, OP-53), me, backup | `pytest tests/setup` |
+| I2 | `oil setup` framework (system probe, stages, `--only`, validation, idempotence) + stages data folder (OneDrive guard, OP-53), me, backup — done | `pytest tests/setup` |
 | I3 | Stages Outlook (classic/new detection, COM) and network (proxy, TLS probe) | `pytest tests/setup` |
 | I4 | Stages Jira/Confluence (URL normalisation, token, live lists) and SharePoint (OneDrive registry libraries) | `pytest tests/setup` |
 | I5 | Finish stage (live check, first project, summary), re-run behaviour | `pytest tests/setup && pytest` |

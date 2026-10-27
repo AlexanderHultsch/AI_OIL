@@ -6,7 +6,8 @@ from ai_oil.config import default_home, load_config, write_default_config
 from ai_oil.db.engine import create_db_engine
 from ai_oil.db.migrate import upgrade
 from ai_oil.domain import people
-from ai_oil.errors import ConflictError, NotFoundError
+from ai_oil.errors import ConfigError, ConflictError, NotFoundError
+from ai_oil.setup.probe import LocalProbe, inside_onedrive
 
 
 def register(subparsers) -> None:
@@ -21,6 +22,12 @@ def register(subparsers) -> None:
 
 def run(args: argparse.Namespace) -> int:
     home = args.home or default_home()
+    root = inside_onedrive(home, LocalProbe().onedrive_roots())
+    if root is not None:
+        raise ConfigError(
+            f"{home} is inside OneDrive ({root}) — a database under a sync client can be corrupted; "
+            "use the default %LOCALAPPDATA%\\AI_OIL or set AI_OIL_HOME elsewhere"
+        )
     write_default_config(home)
     config = load_config(home)
     engine = create_db_engine(config.db_path)

@@ -267,3 +267,23 @@ def test_list_persons_excludes_merged_by_default(conn: sqlalchemy.Connection) ->
         "Bob",
         "Carol",
     ]
+
+
+def test_update_person_changes_name_and_organisation(conn: sqlalchemy.Connection) -> None:
+    person = people.create_person(conn, "Sam", organisation="ACME", notes="n")
+
+    renamed = people.update_person(conn, person.id, display_name=" Samuel ")
+    assert renamed == people.Person(person.id, "Samuel", "ACME", False, None, "n")
+
+    moved = people.update_person(conn, person.id, organisation="Globex")
+    assert moved == people.Person(person.id, "Samuel", "Globex", False, None, "n")
+    assert people.update_person(conn, person.id) == moved
+
+
+def test_update_person_rejects_blank_name_and_unknown_person(conn: sqlalchemy.Connection) -> None:
+    person = people.create_person(conn, "Sam")
+    with pytest.raises(ValidationError):
+        people.update_person(conn, person.id, display_name="  ")
+    assert people.get_person(conn, person.id).display_name == "Sam"
+    with pytest.raises(NotFoundError):
+        people.update_person(conn, 999, display_name="X")

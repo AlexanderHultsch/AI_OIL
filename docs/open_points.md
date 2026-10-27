@@ -55,7 +55,7 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OP-38 | Without a credential store (no keyring backend) the /connectors page shows an error page instead of the connectors with credential state "unknown" | Only on machines without a keyring; Windows has Credential Manager | Catch ConfigError per connector and show it on the card | open |
 | OP-51 | `/sync?backup=…` and `?backup_error=…` render the text carried in the URL (escaped) | A crafted local link can show a misleading banner on the sync page | Pass a short-lived message id instead of the text | accepted |
 | OP-52 | A note created through the issue page's "New note" form keeps the browser's CRLF line endings (editing normalises them) | A later identical save creates one extra version | Normalise line endings on creation too | open |
-| OP-53 | Nothing stops `AI_OIL_HOME` (database) or the Python environment from being placed inside a OneDrive folder | Corruption risk if someone does it | `oil init` / `oil serve` warn when the data folder is under `%OneDrive%` / `%OneDriveCommercial%`; until then: follow docs/install_windows.md | open |
+| OP-53 | Nothing stops `AI_OIL_HOME` (database) or the Python environment from being placed inside a OneDrive folder | Corruption risk if someone does it | Guard in `oil init` (refuses), every command (warns) and `oil setup` (step I2) | closed |
 
 ## 3. Decisions needed
 

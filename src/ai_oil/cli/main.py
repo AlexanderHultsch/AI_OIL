@@ -15,11 +15,13 @@ from ai_oil.cli import person as person_command
 from ai_oil.cli import project as project_command
 from ai_oil.cli import search as search_command
 from ai_oil.cli import serve as serve_command
+from ai_oil.cli import setup as setup_command
 from ai_oil.cli import source as source_command
 from ai_oil.errors import AiOilError
 
 COMMAND_MODULES: list = [
     init_command,
+    setup_command,
     project_command,
     issue_command,
     comment_command,
