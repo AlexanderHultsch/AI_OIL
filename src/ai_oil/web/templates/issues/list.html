@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Issues — AI_OIL{% endblock %}
+{% block content %}
+<h1>Issues{% if active_filter %} <span class="muted">· {{ active_filter.name }}</span>{% endif %}</h1>
+<form class="oql-form" action="/issues" method="get">
+  <input type="text" name="q" value="{{ query }}" aria-label="OQL query" autocomplete="off" spellcheck="false">
+  <button class="primary" type="submit">Search</button>
+</form>
+{% if error %}
+<pre class="oql-error">{{ error }}</pre>
+{% else %}
+<p class="result-count muted">{{ count }} issue{{ "" if count == 1 else "s" }}</p>
+{% if truncated %}<p class="note">{{ overflow_note }}</p>{% endif %}
+<div id="issue-table">
+{% include "issues/_table.html" %}
+</div>
+{% endif %}
+{% endblock %}

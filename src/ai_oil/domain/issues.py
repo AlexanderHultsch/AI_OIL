@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 import sqlalchemy
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from ai_oil.domain import history, people, projects
 from ai_oil.errors import NotFoundError, TransitionError, ValidationError
@@ -45,6 +45,7 @@ EDITABLE_FIELDS = (
 )
 
 _SUMMARY_MAX = 120
+_ID_CHUNK = 500
 _CHILD_TYPE = {"Epic": "Task", "Task": "Sub-task"}
 
 _SELECT = (
@@ -104,6 +105,10 @@ def _issue(conn: sqlalchemy.Connection, row: sqlalchemy.RowMapping) -> Issue:
         ),
         {"id": row["id"]},
     ).scalars()
+    return _build_issue(row, list(labels), list(components))
+
+
+def _build_issue(row: sqlalchemy.RowMapping, labels: Sequence[str], components: Sequence[str]) -> Issue:
     return Issue(
         id=row["id"],
         project_id=row["project_id"],
@@ -149,6 +154,34 @@ def get_issue_by_id(conn: sqlalchemy.Connection, issue_id: int) -> Issue:
     if row is None:
         raise NotFoundError(f"issue {issue_id} not found")
     return _issue(conn, row)
+
+
+def get_issues_by_ids(conn: sqlalchemy.Connection, issue_ids: Sequence[int]) -> list[Issue]:
+    """The issues with these ids in the given order, loaded in a constant number of queries per 500 ids."""
+    rows: dict[int, sqlalchemy.RowMapping] = {}
+    labels: dict[int, list[str]] = {}
+    components: dict[int, list[str]] = {}
+    for start in range(0, len(issue_ids), _ID_CHUNK):
+        chunk = list(issue_ids[start : start + _ID_CHUNK])
+        found = conn.execute(
+            text(f"{_SELECT} WHERE i.id IN :ids").bindparams(bindparam("ids", expanding=True)),
+            {"ids": chunk},
+        ).mappings()
+        rows.update({row["id"]: row for row in found})
+        for table, target in (("label", labels), ("component", components)):
+            names = conn.execute(
+                text(
+                    f"SELECT x.issue_id, t.name FROM issue_{table} x JOIN {table} t ON t.id = x.{table}_id"
+                    " WHERE x.issue_id IN :ids"
+                ).bindparams(bindparam("ids", expanding=True)),
+                {"ids": chunk},
+            )
+            for issue_id, name in names:
+                target.setdefault(issue_id, []).append(name)
+    missing = [issue_id for issue_id in issue_ids if issue_id not in rows]
+    if missing:
+        raise NotFoundError(f"issue {missing[0]} not found")
+    return [_build_issue(rows[i], labels.get(i, []), components.get(i, [])) for i in issue_ids]
 
 
 def list_children(conn: sqlalchemy.Connection, key: str) -> list[Issue]:

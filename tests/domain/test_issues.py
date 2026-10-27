@@ -793,3 +793,27 @@ def test_component_of_other_project_rejected(conn: sqlalchemy.Connection, me, oi
     with pytest.raises(NotFoundError):
         issues.add_component(conn, issue.key, "Nope", actor_id=me.id)
     assert change_set_count(conn) == 1
+
+
+def test_get_issues_by_ids_keeps_the_order_and_loads_labels_and_components(
+    conn: sqlalchemy.Connection, me: people.Person, oil: projects.Project
+) -> None:
+    first = make(conn, me, "One", labels=["b", "a"], components=["Electronics"])
+    second = make(conn, me, "Two")
+    third = make(conn, me, "Three", labels=["c"])
+
+    found = issues.get_issues_by_ids(conn, [third.id, first.id, second.id])
+
+    assert found == [third, first, second]
+    assert found[1].labels == ("a", "b")
+    assert found[1].components == ("Electronics",)
+    assert issues.get_issues_by_ids(conn, []) == []
+
+
+def test_get_issues_by_ids_unknown_id(
+    conn: sqlalchemy.Connection, me: people.Person, oil: projects.Project
+) -> None:
+    existing = make(conn, me)
+
+    with pytest.raises(NotFoundError):
+        issues.get_issues_by_ids(conn, [existing.id, 999])

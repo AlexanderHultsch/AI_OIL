@@ -95,3 +95,32 @@ input, select, textarea {
 }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 textarea { width: 100%; }
+
+table.issues td.key { white-space: nowrap; }
+table.issues td.summary { max-width: 480px; }
+.oql-form { display: flex; gap: 8px; margin: 0 0 12px; }
+.oql-form input[type="text"] { flex: 1; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.oql-error {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  border-radius: 3px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+.fetch-error { color: var(--danger); cursor: help; }
+.note { margin: 0 0 12px; color: var(--muted); font-style: italic; }
+.result-count { margin: 0 0 8px; }
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; }

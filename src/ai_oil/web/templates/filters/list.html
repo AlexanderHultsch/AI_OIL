@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Filters — AI_OIL{% endblock %}
+{% block content %}
+<h1>Filters</h1>
+<table class="filters">
+  <thead>
+    <tr><th>Name</th><th>Query</th></tr>
+  </thead>
+  <tbody>
+    {% for filter in filters %}
+    <tr>
+      <td><a href="/issues?filter={{ filter.id }}">{{ filter.name }}</a>{% if filter.built_in %} <span class="badge">built-in</span>{% endif %}</td>
+      <td><code>{{ filter.query }}</code></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

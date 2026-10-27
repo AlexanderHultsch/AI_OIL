@@ -539,4 +539,4 @@ def search_issues(
         sql += " LIMIT :limit"
         params["limit"] = limit
     ids = conn.execute(sqlalchemy.text(sql), params).scalars().all()
-    return [issues.get_issue_by_id(conn, issue_id) for issue_id in ids]
+    return issues.get_issues_by_ids(conn, ids)

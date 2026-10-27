@@ -13,7 +13,7 @@ from ai_oil.config import Config
 from ai_oil.errors import AiOilError, NotFoundError
 from ai_oil.web.csrf import STATE_CHANGING_METHODS, CsrfProtection
 from ai_oil.web.rendering import is_htmx, render
-from ai_oil.web.routes import home
+from ai_oil.web.routes import home, issues
 
 WEB_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = WEB_DIR / "templates"
@@ -102,4 +102,5 @@ def create_app(config: Config, engine: sqlalchemy.Engine, *, port: int) -> FastA
     app.add_exception_handler(NotFoundError, _not_found_handler)
     app.add_exception_handler(AiOilError, _domain_error_handler)
     app.include_router(home.router)
+    app.include_router(issues.router)
     return app
