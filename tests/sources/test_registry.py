@@ -239,6 +239,29 @@ def test_update_settings_replaces(conn: sqlalchemy.Connection, fake_registered: 
         registry.update_settings(conn, "missing", {})
 
 
+def test_set_credential_ref_sets_and_clears_the_reference(
+    conn: sqlalchemy.Connection, fake_registered: type
+) -> None:
+    row = registry.create_connector(conn, "fake", "Fake", settings={"a": 1})
+    assert row.credential_ref is None
+
+    updated = registry.set_credential_ref(conn, "Fake", "ai_oil/Fake")
+    assert updated == registry.ConnectorRow(
+        id=row.id,
+        type="fake",
+        name="Fake",
+        enabled=True,
+        settings={"a": 1},
+        credential_ref="ai_oil/Fake",
+        created_at=row.created_at,
+    )
+    assert registry.get_connector(conn, row.id).credential_ref == "ai_oil/Fake"
+
+    assert registry.set_credential_ref(conn, row.id, None).credential_ref is None
+    with pytest.raises(NotFoundError):
+        registry.set_credential_ref(conn, "missing", "ai_oil/x")
+
+
 def test_instantiate_passes_config_and_backends(conn: sqlalchemy.Connection, fake_registered: type) -> None:
     row = registry.create_connector(conn, "fake", "Fake", settings={"a": 1}, credential_ref="ref")
     backend = object()

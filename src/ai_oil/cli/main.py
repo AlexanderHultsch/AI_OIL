@@ -7,6 +7,7 @@ from pathlib import Path
 from ai_oil import __version__
 from ai_oil.cli import backup as backup_command
 from ai_oil.cli import comment as comment_command
+from ai_oil.cli import connector as connector_command
 from ai_oil.cli import init as init_command
 from ai_oil.cli import issue as issue_command
 from ai_oil.cli import issue_link as issue_link_command
@@ -26,6 +27,7 @@ COMMAND_MODULES: list = [
     search_command,
     source_command,
     backup_command,
+    connector_command,
 ]
 
 

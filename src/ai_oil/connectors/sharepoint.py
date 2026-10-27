@@ -33,7 +33,7 @@ _OFFLINE_MASK = (
 )
 
 _SHARING_PREFIX = re.compile(r"^/:[A-Za-z]:/r(?=/)")
-_OPAQUE_SHARING_PREFIX = re.compile(r"^/:[A-Za-z]:/s(?=/|$)")
+_OPAQUE_SHARING_PREFIX = re.compile(r"^/:[A-Za-z]:/(?!r/)")
 _CONFLICT_SUFFIX = r"-[A-Za-z0-9_]+(-\d+)?"
 _LIBRARY_SEGMENTS = 3
 

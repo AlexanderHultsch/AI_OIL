@@ -316,6 +316,8 @@ def test_a_sharing_prefix_does_not_hide_an_unmapped_library(library: Path) -> No
     [
         "https://acme.sharepoint.com/:x:/s/HW/EabcDEFghi?e=1",
         "https://acme.sharepoint.com/:w:/s/HW",
+        "https://acme.sharepoint.com/:x:/g/personal/alex_acme_com/EabcDEFghi?e=1",
+        "https://acme.sharepoint.com/:w:/t/HW/EabcDEFghi",
     ],
 )
 def test_an_opaque_sharing_link_is_rejected(url: str, library: Path) -> None:

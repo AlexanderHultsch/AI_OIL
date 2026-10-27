@@ -166,6 +166,18 @@ def update_settings(conn: sqlalchemy.Connection, ref: str | int, settings: Mappi
     return get_connector(conn, row.id)
 
 
+def set_credential_ref(
+    conn: sqlalchemy.Connection, ref: str | int, credential_ref: str | None
+) -> ConnectorRow:
+    """Point a connector instance at the Credential Manager entry that holds its secret (GOV-8)."""
+    row = get_connector(conn, ref)
+    conn.execute(
+        text("UPDATE connector SET credential_ref = :credential_ref WHERE id = :id"),
+        {"credential_ref": credential_ref, "id": row.id},
+    )
+    return get_connector(conn, row.id)
+
+
 def instantiate(row: ConnectorRow, **backends: object) -> object:
     """Construct the plugin for a configured instance; backends are injected system access (CON-6)."""
     cls = get_connector_class(row.type)
