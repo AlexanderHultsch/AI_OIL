@@ -4,6 +4,7 @@ import pytest
 import requests
 
 from ai_oil import secrets
+from ai_oil.connectors import atlassian
 from ai_oil.connectors.atlassian import (
     AtlassianClient,
     AtlassianError,
@@ -159,6 +160,69 @@ def test_ca_bundle_is_passed_as_verify() -> None:
     client, session = make_client(FakeResponse(payload={}), ca_bundle="C:/certs/corp.pem")
     client.get_json("/x")
     assert session.calls[0]["verify"] == "C:/certs/corp.pem"
+
+
+class SessionProbe:
+    """Stands in for both session factories and records which one built the client's session."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.built: list[str] = []
+        self.plain = FakeSession(FakeResponse(payload={}))
+        self.system = FakeSession(FakeResponse(payload={}))
+        monkeypatch.setattr(atlassian.requests, "Session", self._plain_session)
+        monkeypatch.setattr(atlassian, "system_certificate_session", self._system_session)
+
+    def _plain_session(self) -> FakeSession:
+        self.built.append("plain")
+        return self.plain
+
+    def _system_session(self) -> FakeSession:
+        self.built.append("system")
+        return self.system
+
+
+@pytest.fixture
+def probe(monkeypatch: pytest.MonkeyPatch) -> SessionProbe:
+    return SessionProbe(monkeypatch)
+
+
+def test_the_system_certificate_store_is_the_default(probe: SessionProbe) -> None:
+    client = AtlassianClient(BASE, "me@example.com", REF)
+    client.get_json("/x")
+
+    assert probe.built == ["system"]
+    assert probe.system.calls[0]["verify"] is True
+    assert probe.plain.calls == []
+
+
+def test_an_explicit_ca_bundle_overrides_the_system_certificate_store(probe: SessionProbe) -> None:
+    client = AtlassianClient(BASE, "me@example.com", REF, ca_bundle="C:/certs/corp.pem")
+    client.get_json("/x")
+
+    assert probe.built == ["plain"]
+    assert probe.plain.calls[0]["verify"] == "C:/certs/corp.pem"
+
+
+def test_an_explicit_ca_bundle_wins_even_when_system_certificates_are_on(probe: SessionProbe) -> None:
+    AtlassianClient(BASE, "me@example.com", REF, ca_bundle="C:/certs/corp.pem", use_system_certificates=True)
+
+    assert probe.built == ["plain"]
+
+
+def test_switching_system_certificates_off_uses_a_plain_session(probe: SessionProbe) -> None:
+    client = AtlassianClient(BASE, "me@example.com", REF, use_system_certificates=False)
+    client.get_json("/x")
+
+    assert probe.built == ["plain"]
+    assert probe.plain.calls[0]["verify"] is True
+
+
+def test_an_injected_session_is_used_as_given(probe: SessionProbe) -> None:
+    client, session = make_client(FakeResponse(payload={}), use_system_certificates=True)
+    client.get_json("/x")
+
+    assert probe.built == []
+    assert session.calls[0]["verify"] is True
 
 
 def test_trailing_slash_of_base_url_is_stripped() -> None:

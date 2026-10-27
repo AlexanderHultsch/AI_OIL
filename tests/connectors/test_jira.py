@@ -276,6 +276,8 @@ EXPECTED_TEXT = (
         ({"base_url": BASE, "email": EMAIL, "projects": "ABC"}, "projects"),
         ({"base_url": BASE, "email": EMAIL, "projects": [1]}, "projects"),
         ({"base_url": BASE, "email": EMAIL, "ca_bundle": 3}, "ca_bundle"),
+        ({"base_url": BASE, "email": EMAIL, "use_system_certificates": "yes"}, "use_system_certificates"),
+        ({"base_url": BASE, "email": EMAIL, "use_system_certificates": 1}, "use_system_certificates"),
         ({"base_url": BASE, "email": EMAIL, "timeout": 0}, "timeout"),
         ({"base_url": BASE, "email": EMAIL, "timeout": "slow"}, "timeout"),
     ],
@@ -290,6 +292,27 @@ def test_the_default_client_is_an_atlassian_client_and_does_no_network_work() ->
 
     assert isinstance(connector._client, AtlassianClient)
     assert repr(connector._client) == f"AtlassianClient({BASE!r})"
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [({}, True), ({"use_system_certificates": True}, True), ({"use_system_certificates": False}, False)],
+)
+def test_use_system_certificates_reaches_the_client(
+    monkeypatch: pytest.MonkeyPatch, extra: dict, expected: bool
+) -> None:
+    seen: dict[str, object] = {}
+    real_init = AtlassianClient.__init__
+
+    def spy(self: AtlassianClient, *args: Any, **kwargs: Any) -> None:
+        seen.update(kwargs)
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(AtlassianClient, "__init__", spy)
+
+    JiraConnector(config({"base_url": BASE, "email": EMAIL, **extra}))
+
+    assert seen["use_system_certificates"] is expected
 
 
 def test_the_connector_declares_its_contract() -> None:

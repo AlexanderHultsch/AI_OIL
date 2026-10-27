@@ -19,7 +19,7 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OP-2 | Outlook `GetConversation()` across Inbox, subfolders and Sent Items in cached Exchange mode (spec OI-9) | The whole email linking depends on it | Link one real thread with `--outlook-selected`, reply to it, `oil sync`, check `oil source show ID --entries` lists both messages | open |
 | OP-3 | Outlook time values from pywin32 (local wall-clock tagged as UTC) | Wrong times would mis-order messages and break "did I reply?" later | Compare `oil source show --entries` times with Outlook | open |
 | OP-4 | Outlook `ReceivedTime` on Sent Items | Subject search and the mailbox scan sort by it | Same check as OP-2 for a sent message | open |
-| OP-5 | Corporate SSL inspection for Jira / Confluence | Requests fail with certificate errors | If so: `oil connector set Jira --setting ca_bundle=C:/path/corp-ca.pem` | open |
+| OP-5 | Corporate SSL inspection for Jira / Confluence | Requests fail with certificate errors | Since step I1 the Windows certificate store is used automatically (`truststore`); only if that fails: `oil connector set Jira --setting ca_bundle=C:/path/corp-ca.pem` | open |
 | OP-6 | Atlassian API token and Windows Credential Manager | Tokens must land in Credential Manager | `oil connector add jira … --token`; `oil connector list` shows `credential: stored` | open |
 | OP-7 | OneDrive Files-On-Demand attributes (offline placeholders) | Hydration is reported, not silent | Link a cloud-only file, sync, check the "hydrated" warning | open |
 | OP-8 | Python 3.12, pip and PyPI access on the corporate laptop | No install, no tool | `pip install -e .[dev]`; wheels can be vendored if PyPI is blocked | open |

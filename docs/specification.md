@@ -562,7 +562,7 @@ class Connector(Protocol):
 | CON-2 | Connectors return normalised data (plain text, UTC timestamps, identities as `(system, external_id)`). Hashing, versioning and storage are done by the sync engine, not the connector |
 | CON-3 | A connector failure affects only its own objects (AP-10) |
 | CON-4 | Connectors can be enabled and disabled individually in configuration and in the UI. A disabled connector's objects are reported as `skipped`, not as errors |
-| CON-5 | A corporate CA bundle path is configurable for every HTTP connector (SSL inspection) |
+| CON-5 | A corporate CA bundle path is configurable for every HTTP connector (SSL inspection). Without one, the Jira and Confluence connectors trust the operating-system certificate store through `truststore`; the connector setting `use_system_certificates=false` switches that off |
 | CON-6 | Every connector's system access (COM, HTTP, file system) sits behind a small injectable interface, so tests run against recorded fixtures. `oil connector check --live` runs a read-only check against the real system and is the acceptance test on the target laptop |
 
 ### 6.2 Manual connector (P1, built first)
@@ -898,7 +898,7 @@ Classes C–E do not exist before P5.
 | NFR-4 | Schema changes only through numbered Alembic migrations. `schema_version` is checked on start |
 | NFR-5 | A crash during sync leaves no half-written object (one transaction per object, SYNC-2) |
 | NFR-6 | Logs contain no content bodies and no secrets. Content stays in the database |
-| NFR-7 | Corporate SSL inspection is supported through a configurable CA bundle (CON-5) |
+| NFR-7 | Corporate SSL inspection is supported: the Windows certificate store is trusted by default (`truststore`), and a configurable CA bundle overrides it (CON-5) |
 | NFR-8 | **Backup:** `oil backup` uses SQLite's online-backup API to write a consistent copy plus the blob store delta to a configured folder (typically a synced OneDrive library). It runs automatically at the end of a sync if the last backup is older than 24 h. 14 daily copies are kept. Restore is `oil restore PATH` |
 | NFR-9 | Non-negotiable tests: issue key allocation (no reuse, no gaps under concurrency), history append-only, version deduplication (DM-48 including revert), OQL compiler (injection safety, precedence), `new_text` quote stripping (English and German samples), and from P5 the approval token |
 | NFR-10 | Connectors have recorded fixtures (anonymised JSON/MSG samples), so the test suite runs without Outlook, Jira or the network |

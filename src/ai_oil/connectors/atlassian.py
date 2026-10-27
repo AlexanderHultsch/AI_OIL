@@ -1,6 +1,7 @@
 """Atlassian Cloud access shared by the Jira and Confluence connectors: HTTP client and ADF to text (CON-5, CON-34)."""  # noqa: E501
 
 import re
+import ssl
 import time
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -8,6 +9,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import requests
+import truststore
+from requests.adapters import HTTPAdapter
 
 from ai_oil.errors import AiOilError
 from ai_oil.secrets import get_secret
@@ -15,6 +18,28 @@ from ai_oil.secrets import get_secret
 _RETRY_STATUSES = (429, 503)
 _BODY_EXCERPT = 200
 _MILLIS_PER_SECOND = 1000
+
+
+class _SystemCertificateAdapter(HTTPAdapter):
+    """Transport adapter whose TLS connections are verified against the operating-system certificate store."""
+
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
+        kwargs["ssl_context"] = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        super().init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, proxy: str, **proxy_kwargs: Any) -> Any:
+        proxy_kwargs["ssl_context"] = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
+
+
+def system_certificate_session() -> requests.Session:
+    """A new session that trusts the Windows certificate store, for corporate SSL inspection (CON-5).
+
+    The trust applies to this session only; the process-wide SSL configuration is left alone.
+    """
+    session = requests.Session()
+    session.mount("https://", _SystemCertificateAdapter())
+    return session
 
 
 class AtlassianError(AiOilError):
@@ -28,6 +53,8 @@ class AtlassianNotFound(AtlassianError):
 class AtlassianClient:
     """Read-only JSON access to one Atlassian Cloud site (CON-5, CON-6).
 
+    Without an injected session, an explicit `ca_bundle` wins; otherwise the operating-system certificate
+    store is trusted unless `use_system_certificates` is off, which leaves the bundled certifi roots (CON-5).
     The API token is looked up on the first request, kept in memory only and never put into a message (GOV-8).
     """
 
@@ -38,6 +65,7 @@ class AtlassianClient:
         credential_ref: str | None,
         *,
         ca_bundle: str | None = None,
+        use_system_certificates: bool = True,
         timeout: float = 30.0,
         session: requests.Session | None = None,
         sleep: Callable[[float], None] = time.sleep,
@@ -48,7 +76,7 @@ class AtlassianClient:
         self._credential_ref = credential_ref
         self._ca_bundle = ca_bundle
         self._timeout = timeout
-        self._session = session if session is not None else requests.Session()
+        self._session = session if session is not None else _new_session(ca_bundle, use_system_certificates)
         self._sleep = sleep
         self._max_retries = max_retries
         self._token: str | None = None
@@ -174,6 +202,12 @@ class AtlassianClient:
                 )
             excerpt = response.text[:_BODY_EXCERPT].replace(token, "***")
             raise AtlassianError(f"HTTP {status} for {label}: {excerpt}")
+
+
+def _new_session(ca_bundle: str | None, use_system_certificates: bool) -> requests.Session:
+    if ca_bundle or not use_system_certificates:
+        return requests.Session()
+    return system_certificate_session()
 
 
 def _retry_delay(retry_after: str | None, attempt: int) -> float:

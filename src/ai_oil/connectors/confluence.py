@@ -59,6 +59,13 @@ def _spaces_setting(settings: Mapping[str, object]) -> list[str]:
     return [item.strip() for item in value]
 
 
+def _bool_setting(settings: Mapping[str, object], key: str, default: bool) -> bool:
+    value = settings.get(key, default)
+    if not isinstance(value, bool):
+        raise ValidationError(f"Confluence setting {key} must be true or false")
+    return value
+
+
 def _timeout_setting(settings: Mapping[str, object]) -> float:
     value = settings.get("timeout", 30)
     if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
@@ -171,6 +178,7 @@ class ConfluenceConnector:
         assert email is not None
         self._spaces = _spaces_setting(settings)
         ca_bundle = _text_setting(settings, "ca_bundle", required=False)
+        use_system_certificates = _bool_setting(settings, "use_system_certificates", True)
         timeout = _timeout_setting(settings)
         parts = urlsplit(self._base_url)
         self._host = (parts.hostname or "").lower()
@@ -179,7 +187,12 @@ class ConfluenceConnector:
             client
             if client is not None
             else AtlassianClient(
-                self._base_url, email, config.credential_ref, ca_bundle=ca_bundle, timeout=timeout
+                self._base_url,
+                email,
+                config.credential_ref,
+                ca_bundle=ca_bundle,
+                use_system_certificates=use_system_certificates,
+                timeout=timeout,
             )
         )
 

@@ -121,7 +121,7 @@ Every line should read `[ok]`. If not:
 | Message | Fix |
 |---|---|
 | Outlook: "classic Outlook is not available … new Outlook has no COM interface" | Switch off "New Outlook", start classic Outlook, run again |
-| Jira/Confluence: certificate / SSL error | `oil connector set Jira --setting ca_bundle=C:/path/to/corporate-ca.pem` (same for Confluence) — OP-5 |
+| Jira/Confluence: certificate / SSL error | Normally nothing to do: the Windows certificate store is used automatically. Only if IT hands out a specific bundle: `oil connector set Jira --setting ca_bundle=C:/path/to/corporate-ca.pem` (same for Confluence). To switch the Windows store off: `oil connector set Jira --setting use_system_certificates=false` — OP-5 |
 | Jira/Confluence: "authentication failed (401)" | Wrong e-mail or token: `oil connector set Jira --token` |
 | SharePoint: "folder not found" | Fix the `path` with `oil connector set SharePoint --setting …` |
 | "no secure credential store is available" | Should not happen on Windows; send me the output |

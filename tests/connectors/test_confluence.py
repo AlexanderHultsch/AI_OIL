@@ -273,6 +273,8 @@ def site() -> FakeSite:
         ({"base_url": WIKI, "email": EMAIL, "spaces": "ABC"}, "spaces"),
         ({"base_url": WIKI, "email": EMAIL, "spaces": [1]}, "spaces"),
         ({"base_url": WIKI, "email": EMAIL, "ca_bundle": 3}, "ca_bundle"),
+        ({"base_url": WIKI, "email": EMAIL, "use_system_certificates": "yes"}, "use_system_certificates"),
+        ({"base_url": WIKI, "email": EMAIL, "use_system_certificates": 1}, "use_system_certificates"),
         ({"base_url": WIKI, "email": EMAIL, "timeout": 0}, "timeout"),
         ({"base_url": WIKI, "email": EMAIL, "timeout": "slow"}, "timeout"),
     ],
@@ -287,6 +289,27 @@ def test_the_default_client_is_an_atlassian_client_and_does_no_network_work() ->
 
     assert isinstance(connector._client, AtlassianClient)
     assert repr(connector._client) == f"AtlassianClient({WIKI!r})"
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [({}, True), ({"use_system_certificates": True}, True), ({"use_system_certificates": False}, False)],
+)
+def test_use_system_certificates_reaches_the_client(
+    monkeypatch: pytest.MonkeyPatch, extra: dict, expected: bool
+) -> None:
+    seen: dict[str, object] = {}
+    real_init = AtlassianClient.__init__
+
+    def spy(self: AtlassianClient, *args: Any, **kwargs: Any) -> None:
+        seen.update(kwargs)
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(AtlassianClient, "__init__", spy)
+
+    ConfluenceConnector(config({"base_url": WIKI, "email": EMAIL, **extra}))
+
+    assert seen["use_system_certificates"] is expected
 
 
 def test_the_connector_declares_its_contract() -> None:
