@@ -3,6 +3,7 @@
 import argparse
 import difflib
 import sys
+from collections.abc import Callable
 
 import sqlalchemy
 from sqlalchemy import text
@@ -10,11 +11,12 @@ from sqlalchemy import text
 from ai_oil.backup import maybe_auto_backup
 from ai_oil.cli.common import transaction
 from ai_oil.cli.context import open_context
-from ai_oil.connectors import manual
+from ai_oil.connectors import manual, outlook
 from ai_oil.domain import people
 from ai_oil.errors import ValidationError
 from ai_oil.governance import audit
 from ai_oil.sources import linking, registry, store
+from ai_oil.sources.model import ObjectMeta
 from ai_oil.sources.sync import SyncScope, format_report, run_sync
 
 
@@ -27,6 +29,18 @@ def register(subparsers) -> None:
     link.add_argument("--connector", default=None, metavar="NAME", help="only ask this connector")
     link.add_argument("--title", default=None, help="title of a new note")
     link.add_argument("--text", default=None, help="text of a new note")
+    link.add_argument(
+        "--outlook-selected", action="store_true", help="link the conversation selected in Outlook"
+    )
+    link.add_argument(
+        "--outlook-subject",
+        default=None,
+        metavar="TEXT",
+        help="link an Outlook conversation found by subject",
+    )
+    link.add_argument(
+        "--pick", type=int, default=None, metavar="N", help="with --outlook-subject: hit number"
+    )
     link.set_defaults(func=run_link)
 
     unlink = subparsers.add_parser("unlink", help="remove a source from an issue")
@@ -101,7 +115,83 @@ def _choose(
     raise ValidationError(f"no connector recognises '{reference}'{note}")
 
 
-def _link_reference(args: argparse.Namespace) -> int:
+Selection = tuple[registry.ConnectorRow, ObjectMeta] | None
+Selector = Callable[
+    [argparse.Namespace, list[tuple[registry.ConnectorRow, object]], list[tuple[str, str]]], Selection
+]
+
+
+def _select_reference(
+    args: argparse.Namespace,
+    instances: list[tuple[registry.ConnectorRow, object]],
+    skipped: list[tuple[str, str]],
+    reference: str | None = None,
+) -> Selection:
+    reference = args.reference if reference is None else reference
+    matches = registry.match_reference(instances, reference)
+    row, ref = _choose(matches, reference, skipped)
+    connector = next(instance for candidate, instance in instances if candidate.id == row.id)
+    return row, connector.resolve(ref)  # type: ignore[attr-defined]
+
+
+def _outlook_instance(
+    args: argparse.Namespace, instances: list[tuple[registry.ConnectorRow, object]]
+) -> tuple[registry.ConnectorRow, object]:
+    found = [(row, instance) for row, instance in instances if row.type == outlook.OutlookConnector.type]
+    if args.connector is not None and instances and not found:
+        raise ValidationError(f"connector {args.connector} is not an Outlook connector")
+    if not found:
+        raise ValidationError("no enabled Outlook connector — add one with `oil connector add outlook`")
+    if len(found) > 1:
+        names = ", ".join(row.name for row, _ in found)
+        raise ValidationError(
+            f"several Outlook connectors are enabled ({names}); choose one with --connector"
+        )
+    return found[0]
+
+
+def _select_outlook_selected(
+    args: argparse.Namespace,
+    instances: list[tuple[registry.ConnectorRow, object]],
+    skipped: list[tuple[str, str]],
+) -> Selection:
+    return _select_reference(args, [_outlook_instance(args, instances)], skipped, outlook.SELECTED_REFERENCE)
+
+
+def _describe_candidate(number: int, candidate: outlook.ConversationCandidate) -> str:
+    latest = candidate.latest.astimezone().strftime("%Y-%m-%d %H:%M") if candidate.latest else "no date"
+    return (
+        f"  {number}. {candidate.subject} — {latest} — {candidate.sender}"
+        f" ({candidate.message_count} messages)"
+    )
+
+
+def _select_outlook_subject(
+    args: argparse.Namespace,
+    instances: list[tuple[registry.ConnectorRow, object]],
+    skipped: list[tuple[str, str]],
+) -> Selection:
+    row, connector = _outlook_instance(args, instances)
+    candidates = connector.find_conversations(args.outlook_subject)  # type: ignore[attr-defined]
+    if not candidates:
+        raise ValidationError(f"no email conversation matches '{args.outlook_subject}'")
+    if args.pick is not None:
+        if args.pick > len(candidates):
+            raise ValidationError(
+                f"--pick {args.pick} is out of range: {len(candidates)} conversations match"
+            )
+        chosen = candidates[args.pick - 1]
+    elif len(candidates) == 1:
+        chosen = candidates[0]
+    else:
+        print("Several conversations match; re-run with --pick N:")
+        for number, candidate in enumerate(candidates, start=1):
+            print(_describe_candidate(number, candidate))
+        return None
+    return row, connector.resolve(chosen.ref)  # type: ignore[attr-defined]
+
+
+def _link_source(args: argparse.Namespace, select: Selector) -> int:
     ctx = open_context(args)
     try:
         with ctx.engine.begin() as conn:
@@ -119,10 +209,10 @@ def _link_reference(args: argparse.Namespace) -> int:
                     skipped.append((candidate.name, f"{type(exc).__name__}: {exc}"))
             if only is not None and skipped:
                 raise ValidationError(f"connector {skipped[0][0]} is not usable: {skipped[0][1]}")
-            matches = registry.match_reference(instances, args.reference)
-            row, ref = _choose(matches, args.reference, skipped)
-            connector = next(instance for candidate, instance in instances if candidate.id == row.id)
-            meta = connector.resolve(ref)  # type: ignore[attr-defined]
+            selection = select(args, instances, skipped)
+            if selection is None:
+                return 1
+            row, meta = selection
             object_id = store.upsert_object(conn, row.id, meta)
             linked = linking.link_source(
                 conn, args.key, object_id, role=args.role, note=args.note_text, actor_id=me.id
@@ -146,11 +236,20 @@ def _link_reference(args: argparse.Namespace) -> int:
 
 def run_link(args: argparse.Namespace) -> int:
     note_args = args.title is not None or args.text is not None
-    if (args.reference is None) == (not note_args) or (
-        note_args and (args.title is None or args.text is None)
-    ):
-        raise ValidationError("give a reference, or --title and --text for a note")
-    return _link_note(args) if note_args else _link_reference(args)
+    modes = [args.reference is not None, note_args, args.outlook_selected, args.outlook_subject is not None]
+    if sum(modes) != 1 or (note_args and (args.title is None or args.text is None)):
+        raise ValidationError(
+            "give a reference, or --title and --text for a note, or --outlook-selected, or --outlook-subject"
+        )
+    if args.pick is not None and (args.outlook_subject is None or args.pick < 1):
+        raise ValidationError("--pick needs --outlook-subject and a number of 1 or more")
+    if note_args:
+        return _link_note(args)
+    if args.outlook_selected:
+        return _link_source(args, _select_outlook_selected)
+    if args.outlook_subject is not None:
+        return _link_source(args, _select_outlook_subject)
+    return _link_source(args, _select_reference)
 
 
 def run_unlink(args: argparse.Namespace) -> int:

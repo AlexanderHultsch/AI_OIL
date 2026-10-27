@@ -1,11 +1,14 @@
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
+from datetime import UTC, datetime
 from typing import ClassVar
 
 import pytest
 import sqlalchemy
 
 from ai_oil.config import load_config
+from ai_oil.connectors.outlook import OutlookConnector
+from ai_oil.connectors.outlook_session import MailAddress, MailRecord
 from ai_oil.db.engine import create_db_engine
 from ai_oil.governance import audit
 from ai_oil.sources import linking, registry, store
@@ -598,3 +601,263 @@ def test_link_by_another_connector_works_when_one_cannot_start(
 
     assert code == 0
     assert out.splitlines()[0] == "Linked jira_issue: FAKE-5 to OIL-1"
+
+
+# --- oil link: Outlook options ---------------------------------------------------------------------------
+
+_INBOX = "\\\\alex@example.com\\Inbox"
+
+
+def outlook_mail(
+    entry_id: str, conversation_id: str, subject: str, day: int, sender: str = "Jane"
+) -> MailRecord:
+    when = datetime(2026, 3, day, 10, 0, tzinfo=UTC)
+    return MailRecord(
+        entry_id=entry_id,
+        store_id="S1",
+        conversation_id=conversation_id,
+        conversation_topic=subject,
+        internet_message_id=f"<{entry_id.lower()}@acme.com>",
+        in_reply_to=None,
+        references=None,
+        subject=subject,
+        sender=MailAddress(sender, f"{sender.lower()}@acme.com"),
+        to=(MailAddress("Alex", "alex@example.com"),),
+        cc=(),
+        sent_on=when,
+        received_on=when,
+        body=f"Body of {subject}",
+        html_body="",
+        folder_path=_INBOX,
+        attachments=(),
+    )
+
+
+class FakeOutlookSession:
+    """Scripted mailbox shared through class attributes, since the connector builds its own session."""
+
+    records: ClassVar[list[MailRecord]] = []
+    selected: ClassVar[list[MailRecord]] = []
+
+    def folder_paths(self) -> list[str]:
+        return [_INBOX]
+
+    def selected_messages(self) -> list[MailRecord]:
+        return list(self.selected)
+
+    def find_by_subject(self, text: str, *, since: datetime | None, limit: int) -> list[MailRecord]:
+        hits = [r for r in self.records if text.casefold() in r.subject.casefold()]
+        return sorted(hits, key=lambda r: r.sent_on, reverse=True)[:limit]  # type: ignore[arg-type, return-value]
+
+    def find_by_message_id(self, internet_message_id: str) -> MailRecord | None:
+        return None
+
+    def conversation(self, entry_id: str, store_id: str) -> list[MailRecord] | None:
+        anchor = next((r for r in self.records if r.entry_id == entry_id), None)
+        if anchor is None:
+            return None
+        return [r for r in self.records if r.conversation_id == anchor.conversation_id]
+
+    def conversation_by_topic(self, conversation_id: str, topic: str) -> list[MailRecord]:
+        return []
+
+    def find_replies_to(self, internet_message_ids: Sequence[str]) -> list[MailRecord]:
+        return []
+
+    def recent_messages(self, *, since: datetime) -> list[MailRecord]:
+        return []
+
+    def attachment_bytes(self, entry_id: str, store_id: str, index: int) -> bytes:
+        return b""
+
+    def check(self) -> list:
+        return []
+
+
+class FakeSessionOutlook(OutlookConnector):
+    def __init__(self, config: ConnectorConfig, **backends: object) -> None:
+        super().__init__(config, session=FakeOutlookSession())
+
+
+@pytest.fixture
+def add_outlook(home, monkeypatch: pytest.MonkeyPatch):
+    registry.register_connector_type(FakeSessionOutlook)
+    monkeypatch.setattr(FakeOutlookSession, "records", [])
+    monkeypatch.setattr(FakeOutlookSession, "selected", [])
+
+    def add(name: str = "Outlook") -> int:
+        engine = create_db_engine(load_config(home).db_path)
+        try:
+            with engine.begin() as conn:
+                return registry.create_connector(conn, "outlook", name).id
+        finally:
+            engine.dispose()
+
+    yield add
+    registry.unregister_connector_type("outlook")
+
+
+@pytest.fixture
+def mailbox(add_outlook, monkeypatch: pytest.MonkeyPatch) -> list[MailRecord]:
+    add_outlook()
+    records = [
+        outlook_mail("A1", "CA", "Inductor lead time", 1),
+        outlook_mail("A2", "CA", "RE: Inductor lead time", 4, sender="Bob"),
+        outlook_mail("B1", "CB", "Inductor sample", 5),
+        outlook_mail("C1", "CC", "Capacitor quote", 6),
+    ]
+    monkeypatch.setattr(FakeOutlookSession, "records", records)
+    return records
+
+
+def test_link_outlook_selected_links_the_conversation_and_syncs_it(
+    oil, db, capsys, issue, mailbox, monkeypatch
+) -> None:
+    monkeypatch.setattr(FakeOutlookSession, "selected", [mailbox[1]])
+
+    code, out, _ = run(oil, capsys, "link", issue, "--outlook-selected", "--role", "evidence")
+
+    assert code == 0
+    [obj] = rows(
+        db, "SELECT id, object_type, external_id, display_ref, locator, fetch_status FROM source_object"
+    )
+    assert (obj.object_type, obj.external_id, obj.display_ref, obj.locator, obj.fetch_status) == (
+        "email_thread",
+        "CA",
+        "Inductor lead time",
+        "outlook:S1:A2",
+        "ok",
+    )
+    assert out.splitlines()[0] == "Linked email_thread: Inductor lead time to OIL-1"
+    assert "2 new entries" in out
+    with db() as conn:
+        [link] = linking.list_issue_sources(conn, issue)
+        [entry] = audit.list_entries(conn, action_prefix="source.link")
+        assert [e.external_id for e in store.list_entries(conn, obj.id)] == ["<a1@acme.com>", "<a2@acme.com>"]
+    assert (link.role, link.link_method) == ("evidence", "manual")
+    assert (entry.action_class, entry.target) == ("B", "OIL-1")
+
+
+def test_link_outlook_selected_without_a_selection_is_rejected(oil, db, capsys, issue, mailbox) -> None:
+    code, _, err = run(oil, capsys, "link", issue, "--outlook-selected")
+
+    assert code == 1
+    assert "no email is selected in Outlook" in err
+    assert rows(db, "SELECT id FROM source_object") == []
+
+
+def test_link_outlook_subject_with_one_match_links_it(oil, db, capsys, issue, mailbox) -> None:
+    code, out, _ = run(oil, capsys, "link", issue, "--outlook-subject", "capacitor")
+
+    assert code == 0
+    [obj] = rows(db, "SELECT external_id, display_ref FROM source_object")
+    assert (obj.external_id, obj.display_ref) == ("CC", "Capacitor quote")
+    assert out.splitlines()[0] == "Linked email_thread: Capacitor quote to OIL-1"
+
+
+def test_link_outlook_subject_with_several_matches_lists_them(oil, db, capsys, issue, mailbox) -> None:
+    code, out, err = run(oil, capsys, "link", issue, "--outlook-subject", "inductor")
+
+    assert code == 1
+    assert err == ""
+    lines = out.splitlines()
+    assert lines[0] == "Several conversations match; re-run with --pick N:"
+    assert re.fullmatch(r"  1\. Inductor sample — 2026-03-0\d \d\d:\d\d — Jane \(1 messages\)", lines[1]), (
+        lines[1]
+    )
+    assert re.fullmatch(r"  2\. Inductor lead time — 2026-03-0\d \d\d:\d\d — Bob \(2 messages\)", lines[2]), (
+        lines[2]
+    )
+    assert len(lines) == 3
+    assert rows(db, "SELECT id FROM source_object") == []
+    assert rows(db, "SELECT id FROM issue_source_link") == []
+
+
+def test_link_outlook_subject_with_pick_links_the_chosen_conversation(
+    oil, db, capsys, issue, mailbox
+) -> None:
+    code, out, _ = run(oil, capsys, "link", issue, "--outlook-subject", "inductor", "--pick", "2")
+
+    assert code == 0
+    [obj] = rows(db, "SELECT external_id FROM source_object")
+    assert obj.external_id == "CA"
+    assert out.splitlines()[0] == "Linked email_thread: Inductor lead time to OIL-1"
+
+
+@pytest.mark.parametrize("pick", ["3", "0", "-1"])
+def test_link_outlook_subject_pick_out_of_range(oil, db, capsys, issue, mailbox, pick: str) -> None:
+    code, _, err = run(oil, capsys, "link", issue, "--outlook-subject", "inductor", "--pick", pick)
+
+    assert code == 1
+    assert "--pick" in err
+    assert rows(db, "SELECT id FROM source_object") == []
+
+
+def test_link_outlook_subject_without_a_hit_is_rejected(oil, db, capsys, issue, mailbox) -> None:
+    code, _, err = run(oil, capsys, "link", issue, "--outlook-subject", "gearbox")
+
+    assert code == 1
+    assert "no email conversation matches 'gearbox'" in err
+    assert rows(db, "SELECT id FROM source_object") == []
+
+
+@pytest.mark.parametrize("option", ["--outlook-selected", "--outlook-subject"])
+def test_link_outlook_without_an_outlook_connector_is_rejected(
+    oil, db, capsys, issue, add_connector, option: str
+) -> None:
+    add_connector()
+    argv = ["link", issue, option] + (["x"] if option == "--outlook-subject" else [])
+
+    code, _, err = run(oil, capsys, *argv)
+
+    assert code == 1
+    assert "no enabled Outlook connector — add one with `oil connector add outlook`" in err
+
+
+def test_link_outlook_with_several_connectors_needs_a_choice(
+    oil, db, capsys, issue, mailbox, add_outlook
+) -> None:
+    add_outlook("Second")
+
+    code, _, err = run(oil, capsys, "link", issue, "--outlook-subject", "capacitor")
+    assert code == 1
+    assert "several Outlook connectors are enabled (Outlook, Second)" in err
+
+    code, out, _ = run(oil, capsys, "link", issue, "--outlook-subject", "capacitor", "--connector", "Second")
+    assert code == 0
+    [obj] = rows(db, "SELECT c.name FROM source_object o JOIN connector c ON c.id = o.connector_id")
+    assert obj.name == "Second"
+
+
+def test_link_outlook_with_a_connector_of_another_type_is_rejected(
+    oil, db, capsys, issue, mailbox, add_connector
+) -> None:
+    add_connector("Jira")
+
+    code, _, err = run(oil, capsys, "link", issue, "--outlook-selected", "--connector", "Jira")
+
+    assert code == 1
+    assert "connector Jira is not an Outlook connector" in err
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("--outlook-selected", "--outlook-subject", "x"),
+        ("https://example.com/a", "--outlook-selected"),
+        ("https://example.com/a", "--outlook-subject", "x"),
+        ("--outlook-selected", "--title", "T", "--text", "X"),
+        ("--outlook-subject", "x", "--title", "T", "--text", "X"),
+        ("--pick", "1"),
+        ("https://example.com/a", "--pick", "1"),
+        ("--outlook-selected", "--pick", "1"),
+    ],
+)
+def test_link_outlook_options_are_mutually_exclusive(
+    oil, db, capsys, issue, mailbox, argv: tuple[str, ...]
+) -> None:
+    code, _, err = run(oil, capsys, "link", issue, *argv)
+
+    assert code == 1
+    assert "--outlook-selected" in err or "--pick" in err
+    assert rows(db, "SELECT id FROM source_object") == []

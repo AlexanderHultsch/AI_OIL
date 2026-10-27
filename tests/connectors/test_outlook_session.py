@@ -580,6 +580,25 @@ def test_find_by_subject_walks_all_configured_folders(world: FakeOutlook, com: C
     ]
 
 
+def test_folder_paths_lists_every_searched_folder(world: FakeOutlook, com: ComFakes) -> None:
+    default = ComOutlookSession()
+    flat = ComOutlookSession(include_subfolders=False)
+    extra = ComOutlookSession(extra_folders=["Archive/2026", "Archive/Missing", "Shared/2026"])
+
+    assert default.folder_paths() == [
+        "\\\\alex@example.com\\Inbox",
+        "\\\\alex@example.com\\Inbox\\Projects",
+        "\\\\alex@example.com\\Inbox\\Projects\\Deep",
+        "\\\\alex@example.com\\Sent Items",
+    ]
+    assert flat.folder_paths() == ["\\\\alex@example.com\\Inbox", "\\\\alex@example.com\\Sent Items"]
+    assert extra.folder_paths() == [
+        *default.folder_paths(),
+        "\\\\alex@example.com\\Archive\\2026",
+        "\\\\Shared\\2026",
+    ]
+
+
 def test_check_reports_folders_and_skips_unresolvable_ones(world: FakeOutlook, com: ComFakes) -> None:
     session = ComOutlookSession(extra_folders=["Archive/2026", "Archive/Missing", "Shared/2026"])
 

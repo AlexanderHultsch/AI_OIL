@@ -78,6 +78,10 @@ class OutlookSession(Protocol):
 
     def selected_messages(self) -> list[MailRecord]: ...
 
+    def folder_paths(self) -> list[str]:
+        """The FolderPath of every searched folder (CON-27)."""
+        ...
+
     def find_by_subject(self, text: str, *, since: datetime | None, limit: int) -> list[MailRecord]:
         """Mails whose subject contains `text` (case-insensitive), newest first."""
         ...
@@ -336,6 +340,9 @@ class ComOutlookSession:
             if extra is not None:
                 sources.append(_Source(extra, False))
         return sources
+
+    def folder_paths(self) -> list[str]:
+        return [str(source.folder.FolderPath) for source in self._sources(self._ns())]
 
     def selected_messages(self) -> list[MailRecord]:
         explorer = self._app().ActiveExplorer()
