@@ -1,0 +1,8 @@
+{#- The editor of one comment; it replaces the comment and carries the same id (DM-19). -#}
+<form class="comment editor" id="comment-{{ comment.id }}">
+  <textarea name="body" rows="4" aria-label="Comment" required>{{ comment.body }}</textarea>
+  <div class="editor-buttons">
+    <button type="submit" class="primary" hx-post="/issues/{{ issue.key }}/comments/{{ comment.id }}/edit" hx-target="#activity-content">Save</button>
+    <button type="button" hx-get="/issues/{{ issue.key }}/activity/comments" hx-target="#activity-content">Cancel</button>
+  </div>
+</form>

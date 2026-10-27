@@ -1,0 +1,19 @@
+{#- The History tab: change sets newest first, values resolved for display (DM-30, DM-32, DM-33). -#}
+<div class="history">
+  {% for group in groups -%}
+  <div class="change-set">
+    <div class="change-head">
+      <span class="change-time">{{ group.time }}</span>
+      <span class="change-actor">{{ group.actor }}</span>
+      {% if group.proposal %}<span class="muted">{{ group.proposal }}</span>{% endif %}
+    </div>
+    <ul>
+      {% for event in group.events %}
+      <li><span class="event-field">{{ event.field }}</span> {{ event.op }}: <span class="event-old">{{ event.old }}</span> → <span class="event-new">{{ event.new }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% else -%}
+  <p class="placeholder">No history</p>
+  {%- endfor %}
+</div>

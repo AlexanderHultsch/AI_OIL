@@ -9,13 +9,20 @@
     </div>
     {% set field = "description" %}{% include "issue/_view.html" %}
     {% set field = "acceptance_criteria" %}{% include "issue/_view.html" %}
+    {% include "issue/_links.html" %}
     <section class="panel" id="sources-panel">
       <h2>Sources</h2>
       <p class="muted">Coming soon</p>
     </section>
     <section class="panel" id="activity-panel">
       <h2>Activity</h2>
-      <p class="muted">Coming soon</p>
+      <div class="tabs" role="tablist" aria-label="Activity">
+        <button type="button" role="tab" id="tab-comments" aria-selected="true" aria-controls="activity-content" hx-get="/issues/{{ issue.key }}/activity/comments" hx-target="#activity-content">Comments</button>
+        <button type="button" role="tab" id="tab-history" aria-selected="false" aria-controls="activity-content" hx-get="/issues/{{ issue.key }}/activity/history" hx-target="#activity-content">History</button>
+      </div>
+      <div id="activity-content" role="tabpanel">
+        {% include "issue/_comments.html" %}
+      </div>
     </section>
   </div>
   {% include "issue/_side.html" %}

@@ -159,3 +159,38 @@ button.edit { padding: 0 6px; font-size: 12px; color: var(--muted); background: 
 .side-panel .value { overflow-wrap: anywhere; }
 .side-panel .editor { margin: 0; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .side-panel .status-field .inline-reason { grid-column: 2 / -1; flex-wrap: wrap; }
+
+.field-chips .chip-area { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 8px; background: #deebff; border: 1px solid var(--border); border-radius: 12px; }
+.chip-name { overflow-wrap: anywhere; }
+button.chip-remove { padding: 0 6px; line-height: 1.4; color: var(--muted); background: transparent; border-color: transparent; border-radius: 12px; }
+button.chip-remove:hover { color: var(--danger); background: var(--danger-bg); }
+.chip-add { display: flex; gap: 4px; flex-basis: 100%; }
+.chip-add input, .chip-add select { flex: 1; min-width: 0; padding: 2px 6px; }
+
+.link-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.link-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.link-label { min-width: 110px; color: var(--muted); }
+.link-summary { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.link-remove { margin: 0; }
+.link-add { display: flex; gap: 8px; }
+.link-add input { flex: 1; min-width: 0; }
+
+.tabs { display: flex; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid var(--border); }
+.tabs button { background: transparent; border-color: transparent; border-radius: 3px 3px 0 0; color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--accent); font-weight: 600; border-bottom: 2px solid var(--accent); }
+
+.comment { margin: 0 0 12px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; }
+.comment-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 4px; }
+.comment-author { font-weight: 600; }
+.comment-actions { margin-left: auto; }
+.comment-actions button { padding: 0 6px; font-size: 12px; }
+.comment-add { display: flex; flex-direction: column; gap: 6px; }
+
+.change-set { margin: 0 0 12px; padding: 0 0 8px; border-bottom: 1px solid var(--border); }
+.change-head { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 4px; }
+.change-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.change-actor { font-weight: 600; }
+.change-set ul { margin: 0; padding-left: 18px; }
+.event-field { font-weight: 600; }
+.event-old, .event-new { overflow-wrap: anywhere; }

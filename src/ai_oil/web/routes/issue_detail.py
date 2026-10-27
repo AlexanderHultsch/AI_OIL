@@ -1,5 +1,6 @@
-"""Issue detail page: in-place field editing and status transitions (UI-20, UI-26, DM-16)."""
+"""Issue detail page: field edits, labels, components, links, comments and history (UI-20, UI-23, UI-26)."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -8,7 +9,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from starlette.responses import Response
 
 from ai_oil import timeutil
-from ai_oil.domain import issues, people
+from ai_oil.domain import comments, history, issue_links, issues, people, projects
 from ai_oil.errors import NotFoundError, ValidationError
 from ai_oil.governance import audit
 from ai_oil.web.deps import db_read, db_write
@@ -41,6 +42,24 @@ DOMAIN_FIELDS = {
     "due_date": "due_date",
     "parent": "parent",
 }  # UI-26: the field name in the URL to the name `issues.update_issue` takes
+RELATIONS = {
+    "blocks": ("blocks", False),
+    "is_blocked_by": ("blocks", True),
+    "relates_to": ("relates_to", False),
+    "duplicates": ("duplicates", False),
+    "is_duplicated_by": ("duplicates", True),
+}  # DM-14: the relation of the add form to the link type and whether the shown issue is the target
+RELATION_LABELS = {
+    "blocks": "blocks",
+    "is_blocked_by": "is blocked by",
+    "relates_to": "relates to",
+    "duplicates": "duplicates",
+    "is_duplicated_by": "is duplicated by",
+}
+LINK_DIRECTIONS = ("outward", "inward")
+PERSON_FIELDS = ("assignee", "reporter")  # history fields that hold person ids (DM-33)
+MAX_HISTORY_TEXT = 200
+NO_VALUE = "—"
 
 
 @dataclass(frozen=True)
@@ -73,6 +92,33 @@ def _values(conn: sqlalchemy.Connection, issue: issues.Issue) -> DetailValues:
     )
 
 
+@dataclass(frozen=True)
+class CommentRow:
+    id: int
+    author: str
+    created: str
+    edited: bool
+    body: str
+
+
+@dataclass(frozen=True)
+class HistoryLine:
+    field: str
+    op: str
+    old: str
+    new: str
+
+
+@dataclass(frozen=True)
+class HistoryGroup:
+    """The events of one change set (DM-30) with who caused them and when."""
+
+    time: str
+    actor: str
+    proposal: str | None
+    events: tuple[HistoryLine, ...]
+
+
 def _context(
     conn: sqlalchemy.Connection, issue: issues.Issue, *, reason_for: str | None = None
 ) -> dict[str, object]:
@@ -92,10 +138,109 @@ def _check_field(field: str) -> None:
         raise NotFoundError(f"unknown issue field {field!r}")
 
 
+def _side_context(conn: sqlalchemy.Connection, issue: issues.Issue) -> dict[str, object]:
+    """The options of the label and component forms (DM-3, DM-4)."""
+    return {
+        "all_labels": [label.name for label in projects.list_labels(conn)],
+        "available_components": [
+            component.name
+            for component in projects.list_components(conn, issue.project_id)
+            if component.name not in issue.components
+        ],
+    }
+
+
 def _side_response(
     request: Request, conn: sqlalchemy.Connection, issue: issues.Issue, *, reason_for: str | None = None
 ) -> Response:
-    return render(request, "issue/_side.html", _context(conn, issue, reason_for=reason_for))
+    context = {**_context(conn, issue, reason_for=reason_for), **_side_context(conn, issue)}
+    return render(request, "issue/_side.html", context)
+
+
+def _names(conn: sqlalchemy.Connection) -> dict[int, str]:
+    return {person.id: person.display_name for person in people.list_persons(conn, include_merged=True)}
+
+
+def _links_context(conn: sqlalchemy.Connection, issue: issues.Issue) -> dict[str, object]:
+    return {
+        "link_rows": issue_links.list_issue_links(conn, issue.key),
+        "relations": list(RELATION_LABELS.items()),
+    }
+
+
+def _comments_context(conn: sqlalchemy.Connection, issue: issues.Issue) -> dict[str, object]:
+    names = _names(conn)
+    rows = [
+        CommentRow(
+            id=comment.id,
+            author=names.get(comment.author_id, "Unknown"),
+            created=_local_time(comment.created_at),
+            edited=comment.edited_at is not None,
+            body=comment.body,
+        )
+        for comment in comments.list_comments(conn, issue.key)
+    ]
+    return {"issue": issue, "comments": rows}
+
+
+def _display_value(field: str, value: str | None, names: dict[int, str]) -> str:
+    """A raw stored value as shown: person names, local times, shortened text (DM-33)."""
+    if value is None:
+        return NO_VALUE
+    if field in PERSON_FIELDS and value.isdigit():
+        return names.get(int(value), value)
+    if field.endswith("_at"):
+        try:
+            return _local_time(value)
+        except ValueError:
+            return value
+    if len(value) > MAX_HISTORY_TEXT:
+        return value[:MAX_HISTORY_TEXT] + "…"
+    return value
+
+
+def _actor_label(entry: history.HistoryEntry, me: people.Person, names: dict[int, str]) -> str:
+    if entry.actor_type != "user":
+        return entry.actor_type
+    if entry.actor_id is None:
+        return "user"
+    return "You" if entry.actor_id == me.id else names.get(entry.actor_id, "user")
+
+
+def _history_context(conn: sqlalchemy.Connection, issue: issues.Issue) -> dict[str, object]:
+    """The history of the issue as change sets, newest first (DM-30, DM-32, DM-33)."""
+    names = _names(conn)
+    me = people.get_me(conn)
+    grouped: dict[int, list[history.HistoryEntry]] = {}
+    for entry in history.issue_history(conn, issue.id):
+        grouped.setdefault(entry.change_set_id, []).append(entry)
+    groups = []
+    newest_first = sorted(grouped.items(), key=lambda item: (item[1][0].at, item[0]), reverse=True)
+    for _, entries in newest_first:
+        first = entries[0]
+        groups.append(
+            HistoryGroup(
+                time=_local_time(first.at),
+                actor=_actor_label(first, me, names),
+                proposal=(
+                    f"(accepted AI proposal #{first.proposal_id})" if first.proposal_id is not None else None
+                ),
+                events=tuple(
+                    HistoryLine(
+                        field=entry.field,
+                        op=entry.op,
+                        old=_display_value(entry.field, entry.old_value, names),
+                        new=_display_value(entry.field, entry.new_value, names),
+                    )
+                    for entry in entries
+                ),
+            )
+        )
+    return {"issue": issue, "groups": groups}
+
+
+def _audit_web(conn: sqlalchemy.Connection, action: str, key: str, detail: dict[str, object]) -> None:
+    audit.log(conn, action, "B", actor_type="user", target=key, detail={**detail, "via": "web"})
 
 
 def _person_value(field: str, value: str) -> int | None:
@@ -120,7 +265,14 @@ def _parsed(field: str, value: str) -> object:
 @router.get("/issues/{key}")
 def issue_detail(request: Request, key: str, conn: Annotated[sqlalchemy.Connection, Depends(db_read)]):
     issue = issues.get_issue(conn, key)
-    return render(request, "issue/detail.html", {**_context(conn, issue), "nav_active": "issues"})
+    context = {
+        **_context(conn, issue),
+        **_side_context(conn, issue),
+        **_links_context(conn, issue),
+        **_comments_context(conn, issue),
+        "nav_active": "issues",
+    }
+    return render(request, "issue/detail.html", context)
 
 
 @router.get("/issues/{key}/side")
@@ -204,3 +356,191 @@ def transition(
     if after != before:
         audit.log(conn, "issue.edit", "B", actor_type="user", target=before.key, detail=detail)
     return _side_response(request, conn, after)
+
+
+def _change_membership(
+    request: Request,
+    conn: sqlalchemy.Connection,
+    key: str,
+    name: str,
+    change: Callable[..., issues.Issue],
+    option: str,
+) -> Response:
+    """Add or remove one label or component; one change set, one audit entry (UI-20, DM-3, DM-4)."""
+    me = people.get_me(conn)
+    before = issues.get_issue(conn, key)
+    after = change(conn, key, name, actor_id=me.id)
+    if after != before:
+        _audit_web(conn, "issue.edit", before.key, {option: [name.strip()]})
+    return _side_response(request, conn, after)
+
+
+@router.post("/issues/{key}/labels")
+def label_add(
+    request: Request,
+    key: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    name: Annotated[str, Form()] = "",
+) -> Response:
+    return _change_membership(request, conn, key, name, issues.add_label, "add_label")
+
+
+@router.post("/issues/{key}/labels/remove")
+def label_remove(
+    request: Request,
+    key: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    name: Annotated[str, Form()] = "",
+) -> Response:
+    return _change_membership(request, conn, key, name, issues.remove_label, "remove_label")
+
+
+@router.post("/issues/{key}/components")
+def component_add(
+    request: Request,
+    key: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    name: Annotated[str, Form()] = "",
+) -> Response:
+    return _change_membership(request, conn, key, name, issues.add_component, "add_component")
+
+
+@router.post("/issues/{key}/components/remove")
+def component_remove(
+    request: Request,
+    key: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    name: Annotated[str, Form()] = "",
+) -> Response:
+    return _change_membership(request, conn, key, name, issues.remove_component, "remove_component")
+
+
+def _links_response(request: Request, conn: sqlalchemy.Connection, issue: issues.Issue) -> Response:
+    return render(request, "issue/_links.html", {"issue": issue, **_links_context(conn, issue)})
+
+
+@router.post("/issues/{key}/links")
+def link_add(
+    request: Request,
+    key: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    relation: Annotated[str, Form()] = "",
+    other_key: Annotated[str, Form()] = "",
+) -> Response:
+    """Link the issue to another one; the "is ... by" relations swap the two ends (DM-14)."""
+    if relation not in RELATIONS:
+        raise ValidationError(f"relation must be one of {', '.join(RELATION_LABELS.values())}")
+    other = other_key.strip().upper()
+    if not other:
+        raise ValidationError("the other issue key must not be blank")
+    me = people.get_me(conn)
+    issue = issues.get_issue(conn, key)
+    link_type, swapped = RELATIONS[relation]
+    from_key, to_key = (other, issue.key) if swapped else (issue.key, other)
+    link_id = issue_links.link_issues(conn, from_key, link_type, to_key, actor_id=me.id)
+    detail = {"from": from_key, "type": link_type, "to": to_key, "link_id": link_id}
+    _audit_web(conn, "issue_link.add", from_key, detail)
+    return _links_response(request, conn, issue)
+
+
+@router.post("/issues/{key}/links/remove")
+def link_remove(
+    request: Request,
+    key: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    link_type: Annotated[str, Form()] = "",
+    other_key: Annotated[str, Form()] = "",
+    direction: Annotated[str, Form()] = "",
+) -> Response:
+    """Remove one link as seen from this issue (DM-14)."""
+    if direction not in LINK_DIRECTIONS:
+        raise ValidationError(f"direction must be one of {', '.join(LINK_DIRECTIONS)}")
+    me = people.get_me(conn)
+    issue = issues.get_issue(conn, key)
+    other = other_key.strip().upper()
+    from_key, to_key = (issue.key, other) if direction == "outward" else (other, issue.key)
+    issue_links.unlink_issues(conn, from_key, link_type, to_key, actor_id=me.id)
+    _audit_web(conn, "issue_link.remove", from_key, {"from": from_key, "type": link_type, "to": to_key})
+    return _links_response(request, conn, issue)
+
+
+def _comments_response(request: Request, conn: sqlalchemy.Connection, issue: issues.Issue) -> Response:
+    return render(request, "issue/_comments.html", _comments_context(conn, issue))
+
+
+def _comment_of(conn: sqlalchemy.Connection, issue: issues.Issue, comment_id: int) -> comments.Comment:
+    comment = comments.get_comment(conn, comment_id)
+    if comment.issue_id != issue.id:
+        raise NotFoundError(f"comment {comment_id} not found on {issue.key}")
+    return comment
+
+
+@router.get("/issues/{key}/activity/{tab}")
+def activity_tab(
+    request: Request, key: str, tab: str, conn: Annotated[sqlalchemy.Connection, Depends(db_read)]
+) -> Response:
+    """One tab of the activity area as a fragment (UI-23)."""
+    issue = issues.get_issue(conn, key)
+    if tab == "comments":
+        return _comments_response(request, conn, issue)
+    if tab == "history":
+        return render(request, "issue/_history.html", _history_context(conn, issue))
+    raise NotFoundError(f"unknown activity tab {tab!r}")
+
+
+@router.post("/issues/{key}/comments")
+def comment_add(
+    request: Request,
+    key: str,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    body: Annotated[str, Form()] = "",
+) -> Response:
+    me = people.get_me(conn)
+    comment = comments.add_comment(conn, key, body, author_id=me.id)
+    _audit_web(conn, "comment.add", comment.issue_key, {"comment_id": comment.id, "text": comment.body})
+    return _comments_response(request, conn, issues.get_issue(conn, key))
+
+
+@router.get("/issues/{key}/comments/{comment_id}/edit")
+def comment_editor(
+    request: Request, key: str, comment_id: int, conn: Annotated[sqlalchemy.Connection, Depends(db_read)]
+) -> Response:
+    """The editor of one comment, which replaces the comment in the list (DM-19)."""
+    issue = issues.get_issue(conn, key)
+    comment = _comment_of(conn, issue, comment_id)
+    if comment.deleted_at is not None:
+        raise ValidationError(f"comment {comment_id} is deleted and cannot be edited (DM-19)")
+    return render(request, "issue/_comment_editor.html", {"issue": issue, "comment": comment})
+
+
+@router.post("/issues/{key}/comments/{comment_id}/edit")
+def comment_edit(
+    request: Request,
+    key: str,
+    comment_id: int,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    body: Annotated[str, Form()] = "",
+) -> Response:
+    me = people.get_me(conn)
+    issue = issues.get_issue(conn, key)
+    before = _comment_of(conn, issue, comment_id)
+    after = comments.edit_comment(conn, comment_id, body, actor_id=me.id)
+    if after != before:
+        _audit_web(conn, "comment.edit", issue.key, {"comment_id": after.id, "text": after.body})
+    return _comments_response(request, conn, issue)
+
+
+@router.post("/issues/{key}/comments/{comment_id}/delete")
+def comment_delete(
+    request: Request,
+    key: str,
+    comment_id: int,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+) -> Response:
+    me = people.get_me(conn)
+    issue = issues.get_issue(conn, key)
+    comment = _comment_of(conn, issue, comment_id)
+    if comment.deleted_at is None:
+        comments.delete_comment(conn, comment_id, actor_id=me.id)
+        _audit_web(conn, "comment.delete", issue.key, {"comment_id": comment.id})
+    return _comments_response(request, conn, issue)

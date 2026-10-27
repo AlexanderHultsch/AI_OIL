@@ -1,0 +1,22 @@
+{#- The Comments tab: the live comments oldest first and the form to add one (DM-19, UI-23). -#}
+<div class="comments">
+  {% for comment in comments -%}
+  <article class="comment" id="comment-{{ comment.id }}">
+    <header class="comment-head">
+      <span class="comment-author">{{ comment.author }}</span>
+      <span class="muted">{{ comment.created }}{% if comment.edited %} (edited){% endif %}</span>
+      <span class="comment-actions">
+        <button type="button" hx-get="/issues/{{ issue.key }}/comments/{{ comment.id }}/edit" hx-target="#comment-{{ comment.id }}" hx-swap="outerHTML">Edit</button>
+        <button type="button" hx-post="/issues/{{ issue.key }}/comments/{{ comment.id }}/delete" hx-confirm="Delete this comment?" hx-target="#activity-content">Delete</button>
+      </span>
+    </header>
+    <div class="comment-body text">{{ comment.body }}</div>
+  </article>
+  {% else -%}
+  <p class="placeholder">No comments</p>
+  {%- endfor %}
+  <form class="comment-add" hx-post="/issues/{{ issue.key }}/comments" hx-target="#activity-content">
+    <textarea name="body" rows="3" placeholder="Add a comment" aria-label="Comment" required></textarea>
+    <div class="editor-buttons"><button type="submit" class="primary">Comment</button></div>
+  </form>
+</div>

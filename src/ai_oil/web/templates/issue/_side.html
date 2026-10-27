@@ -22,6 +22,47 @@
   {% set field = "assignee" %}{% include "issue/_view.html" %}
   {% set field = "reporter" %}{% include "issue/_view.html" %}
   {% set field = "due_date" %}{% include "issue/_view.html" %}
+  <div class="field-side field-chips" id="field-labels">
+    <span class="label">Labels</span>
+    <div class="value chip-area">
+      {% for name in issue.labels -%}
+      <form class="chip" hx-post="/issues/{{ issue.key }}/labels/remove" hx-target="#side-panel" hx-swap="outerHTML">
+        <input type="hidden" name="name" value="{{ name }}">
+        <span class="chip-name">{{ name }}</span>
+        <button type="submit" class="chip-remove" aria-label="Remove label {{ name }}">×</button>
+      </form>
+      {% else -%}
+      <span class="muted">—</span>
+      {%- endfor %}
+      <form class="chip-add" hx-post="/issues/{{ issue.key }}/labels" hx-target="#side-panel" hx-swap="outerHTML">
+        <input type="text" name="name" list="label-options" placeholder="Add label" aria-label="Add label" autocomplete="off" required>
+        <datalist id="label-options">{% for name in all_labels %}<option value="{{ name }}"></option>{% endfor %}</datalist>
+        <button type="submit">Add</button>
+      </form>
+    </div>
+  </div>
+  <div class="field-side field-chips" id="field-components">
+    <span class="label">Components</span>
+    <div class="value chip-area">
+      {% for name in issue.components -%}
+      <form class="chip" hx-post="/issues/{{ issue.key }}/components/remove" hx-target="#side-panel" hx-swap="outerHTML">
+        <input type="hidden" name="name" value="{{ name }}">
+        <span class="chip-name">{{ name }}</span>
+        <button type="submit" class="chip-remove" aria-label="Remove component {{ name }}">×</button>
+      </form>
+      {% else -%}
+      <span class="muted">—</span>
+      {%- endfor %}
+      {% if available_components -%}
+      <form class="chip-add" hx-post="/issues/{{ issue.key }}/components" hx-target="#side-panel" hx-swap="outerHTML">
+        <select name="name" aria-label="Add component">
+          {% for name in available_components %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+        </select>
+        <button type="submit">Add</button>
+      </form>
+      {%- endif %}
+    </div>
+  </div>
   {% set field = "parent" %}{% include "issue/_view.html" %}
   <div class="field-side"><span class="label">Origin</span><span class="value">{{ issue.origin_type }}</span></div>
   <div class="field-side"><span class="label">Created</span><span class="value">{{ values.created }}</span></div>

@@ -1,0 +1,31 @@
+{#- The issue links of the issue and the form to add one; it replaces itself on every change (DM-14, UI-20). -#}
+<section class="panel" id="links-panel">
+  <h2>Links</h2>
+  {% if link_rows -%}
+  <ul class="link-list">
+    {% for link in link_rows %}
+    <li>
+      <span class="link-label">{{ link.label }}</span>
+      <a class="link-key" href="/issues/{{ link.other_key }}">{{ link.other_key }}</a>
+      <span class="link-summary">{{ link.other_summary }}</span>
+      <span class="badge">{{ link.other_status }}</span>
+      <form class="link-remove" hx-post="/issues/{{ issue.key }}/links/remove" hx-target="#links-panel" hx-swap="outerHTML">
+        <input type="hidden" name="link_type" value="{{ link.link_type }}">
+        <input type="hidden" name="other_key" value="{{ link.other_key }}">
+        <input type="hidden" name="direction" value="{{ link.direction }}">
+        <button type="submit" class="chip-remove" aria-label="Remove link {{ link.label }} {{ link.other_key }}">×</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {%- else -%}
+  <p class="placeholder">No links</p>
+  {%- endif %}
+  <form class="link-add" hx-post="/issues/{{ issue.key }}/links" hx-target="#links-panel" hx-swap="outerHTML">
+    <select name="relation" aria-label="Relation">
+      {% for value, label in relations %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+    </select>
+    <input type="text" name="other_key" placeholder="Issue key" aria-label="Other issue key" autocomplete="off" required>
+    <button type="submit">Link</button>
+  </form>
+</section>

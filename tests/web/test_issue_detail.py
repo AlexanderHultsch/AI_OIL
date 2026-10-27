@@ -124,10 +124,9 @@ def test_the_page_header_and_main_column(detail_client: TestClient) -> None:
     assert "Power stage redesign" in re.search(r'id="field-summary".*?</div>', page, re.DOTALL).group(0)
     assert "Inductor lead time is too long" in page
     assert "Board passes EMC" in page
-    for panel in ("sources-panel", "activity-panel"):
-        match = re.search(rf'<section class="panel" id="{panel}">(.*?)</section>', page, re.DOTALL)
-        assert match is not None
-        assert "Coming soon" in match.group(1)
+    match = re.search(r'<section class="panel" id="sources-panel">(.*?)</section>', page, re.DOTALL)
+    assert match is not None
+    assert "Coming soon" in match.group(1)
     assert '<a href="/issues" class="active" aria-current="page">Issues</a>' in page
 
 
