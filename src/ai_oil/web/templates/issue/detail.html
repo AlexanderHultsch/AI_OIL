@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ issue.key }} — AI_OIL{% endblock %}
+{% block content %}
+<div class="issue-layout">
+  <div class="issue-main">
+    <div class="issue-header">
+      <span class="issue-key muted">{{ issue.key }}</span>
+      {% set field = "summary" %}{% include "issue/_view.html" %}
+    </div>
+    {% set field = "description" %}{% include "issue/_view.html" %}
+    {% set field = "acceptance_criteria" %}{% include "issue/_view.html" %}
+    <section class="panel" id="sources-panel">
+      <h2>Sources</h2>
+      <p class="muted">Coming soon</p>
+    </section>
+    <section class="panel" id="activity-panel">
+      <h2>Activity</h2>
+      <p class="muted">Coming soon</p>
+    </section>
+  </div>
+  {% include "issue/_side.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+{#- The editor of one field; `field` names it. It replaces the display container and carries the same id (UI-26). -#}
+{% set side = field in side_fields %}
+{% set target = "#side-panel" if side else "#field-" ~ field %}
+<form class="field editor" id="field-{{ field }}">
+  <label class="label" for="editor-{{ field }}">{{ field_labels[field] }}</label>
+  {% if field == "summary" -%}
+  <input type="text" id="editor-{{ field }}" name="value" value="{{ issue.summary }}" maxlength="120" required autocomplete="off">
+  {%- elif field == "description" -%}
+  <textarea id="editor-{{ field }}" name="value" rows="10" required>{{ issue.description }}</textarea>
+  {%- elif field == "acceptance_criteria" -%}
+  <textarea id="editor-{{ field }}" name="value" rows="6">{{ issue.acceptance_criteria or "" }}</textarea>
+  {%- elif field == "priority" -%}
+  <select id="editor-{{ field }}" name="value">
+    {% for priority in priorities %}<option value="{{ priority }}"{% if priority == issue.priority %} selected{% endif %}>{{ priority }}</option>{% endfor %}
+  </select>
+  {%- elif field == "issue_type" -%}
+  <select id="editor-{{ field }}" name="value">
+    {% for issue_type in issue_types %}<option value="{{ issue_type }}"{% if issue_type == issue.issue_type %} selected{% endif %}>{{ issue_type }}</option>{% endfor %}
+  </select>
+  {%- elif field == "assignee" -%}
+  <select id="editor-{{ field }}" name="value">
+    <option value=""{% if issue.assignee_id is none %} selected{% endif %}>Unassigned</option>
+    {% for person in persons %}<option value="{{ person.id }}"{% if person.id == issue.assignee_id %} selected{% endif %}>{{ person.display_name }}</option>{% endfor %}
+  </select>
+  {%- elif field == "reporter" -%}
+  <select id="editor-{{ field }}" name="value">
+    {% for person in persons %}<option value="{{ person.id }}"{% if person.id == issue.reporter_id %} selected{% endif %}>{{ person.display_name }}</option>{% endfor %}
+  </select>
+  {%- elif field == "due_date" -%}
+  <input type="date" id="editor-{{ field }}" name="value" value="{{ values.due or "" }}">
+  {%- elif field == "parent" -%}
+  <input type="text" id="editor-{{ field }}" name="value" value="{{ issue.parent_key or "" }}" placeholder="Issue key, empty for none" autocomplete="off">
+  {%- endif %}
+  <div class="editor-buttons">
+    <button type="submit" class="primary" hx-post="/issues/{{ issue.key }}/field/{{ field }}" hx-target="{{ target }}" hx-swap="outerHTML">Save</button>
+    <button type="button" hx-get="/issues/{{ issue.key }}/view/{{ field }}" hx-target="#field-{{ field }}" hx-swap="outerHTML">Cancel</button>
+  </div>
+</form>

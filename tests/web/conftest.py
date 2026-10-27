@@ -142,3 +142,63 @@ def nav_app(nav_home: Path) -> Iterator[FastAPI]:
 @pytest.fixture
 def nav_client(nav_app: FastAPI) -> TestClient:
     return TestClient(nav_app, base_url=f"http://127.0.0.1:{PORT}")
+
+
+@pytest.fixture
+def detail_home(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
+    """A data folder for the issue detail page: a hierarchy, due dates, reasons and a merged person."""
+    path = tmp_path / "detail-home"
+    assert main(["--home", str(path), "init", "--name", "Alex", "--email", "alex@example.com"]) == 0
+    capsys.readouterr()
+    engine = create_db_engine(load_config(path).db_path)
+    try:
+        with engine.begin() as conn:
+            me = people.get_me(conn)
+            bea = people.create_person(conn, "Bea Brandt")
+            twin = people.create_person(conn, "Bea B.")
+            people.merge_persons(conn, twin.id, bea.id, actor_id=me.id)
+            projects.create_project(conn, "OIL", "Open issues")
+            projects.create_project(conn, "ABC", "Alphabet")
+
+            def make(summary: str, description: str, **kwargs) -> None:
+                project = kwargs.pop("project", "OIL")
+                issues.create_issue(conn, project, summary, description, actor_id=me.id, **kwargs)
+
+            make("Platform", "The platform epic", issue_type="Epic")
+            make(
+                "Power stage redesign",
+                "Inductor lead time is too long",
+                parent_key="OIL-1",
+                priority="P2",
+                assignee_id=me.id,
+                reporter_id=bea.id,
+                due_date=date(2026, 10, 15),
+                acceptance_criteria="Board passes EMC",
+            )
+            issues.update_issue(conn, "OIL-2", {"due_date": date(2026, 10, 20)}, actor_id=me.id)
+            issues.transition_issue(conn, "OIL-2", "Blocked", actor_id=me.id, reason="waiting for supplier")
+            make("Finished item", "Done long ago", due_date=date(2026, 10, 1))
+            issues.transition_issue(conn, "OIL-3", "Done", actor_id=me.id)
+            make("Plain item", "Nothing special")
+            make("Dropped item", "Not pursued")
+            issues.transition_issue(conn, "OIL-5", "Cancelled", actor_id=me.id, reason="descoped")
+            make("Late item", "Past due", due_date=date(2026, 10, 1))
+            make("Escaping <b>", "<script>alert(1)</script>\nsecond line")
+            make("Alphabet epic", "Epic of another project", project="ABC", issue_type="Epic")
+    finally:
+        engine.dispose()
+    return path
+
+
+@pytest.fixture
+def detail_app(detail_home: Path) -> Iterator[FastAPI]:
+    engine = create_db_engine(load_config(detail_home).db_path)
+    try:
+        yield create_app(load_config(detail_home), engine, port=PORT)
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture
+def detail_client(detail_app: FastAPI) -> TestClient:
+    return TestClient(detail_app, base_url=f"http://127.0.0.1:{PORT}")

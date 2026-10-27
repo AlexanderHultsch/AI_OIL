@@ -1,0 +1,30 @@
+<aside id="side-panel" class="side-panel" aria-label="Details">
+  <div class="field-side status-field">
+    <span class="label">Status</span>
+    {% if reason_for -%}
+    <form class="inline-reason" hx-post="/issues/{{ issue.key }}/transition" hx-target="#side-panel" hx-swap="outerHTML">
+      <input type="hidden" name="value" value="{{ reason_for }}">
+      <input type="text" name="reason" placeholder="Reason for {{ reason_for }}" aria-label="Reason" autocomplete="off" required>
+      <button type="submit">Set</button>
+      <button type="button" hx-get="/issues/{{ issue.key }}/side" hx-target="#side-panel" hx-swap="outerHTML">Cancel</button>
+    </form>
+    {%- else -%}
+    <select name="value" aria-label="Status" hx-post="/issues/{{ issue.key }}/transition" hx-trigger="change" hx-target="#side-panel" hx-swap="outerHTML">
+      <option value="{{ issue.status }}" selected>{{ issue.status }}</option>
+      {% for status in transitions[issue.status] %}<option value="{{ status }}">{{ status }}</option>{% endfor %}
+    </select>
+    {%- endif %}
+  </div>
+  {% if issue.blocked_reason %}<div class="field-side"><span class="label">Blocked reason</span><span class="value text">{{ issue.blocked_reason }}</span></div>{% endif %}
+  {% if issue.cancel_reason %}<div class="field-side"><span class="label">Cancel reason</span><span class="value text">{{ issue.cancel_reason }}</span></div>{% endif %}
+  {% set field = "priority" %}{% include "issue/_view.html" %}
+  {% set field = "issue_type" %}{% include "issue/_view.html" %}
+  {% set field = "assignee" %}{% include "issue/_view.html" %}
+  {% set field = "reporter" %}{% include "issue/_view.html" %}
+  {% set field = "due_date" %}{% include "issue/_view.html" %}
+  {% set field = "parent" %}{% include "issue/_view.html" %}
+  <div class="field-side"><span class="label">Origin</span><span class="value">{{ issue.origin_type }}</span></div>
+  <div class="field-side"><span class="label">Created</span><span class="value">{{ values.created }}</span></div>
+  <div class="field-side"><span class="label">Updated</span><span class="value">{{ values.updated }}</span></div>
+  <div class="field-side"><span class="label">Resolved</span><span class="value">{{ values.resolved or "—" }}</span></div>
+</aside>

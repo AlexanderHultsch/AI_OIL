@@ -134,3 +134,28 @@ th a.sort { color: inherit; }
 .sort-arrow { color: var(--accent); }
 table.issues select, table.issues input[type="date"] { padding: 2px 4px; }
 .inline-reason { display: flex; gap: 4px; }
+
+.issue-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+@media (max-width: 900px) { .issue-layout { grid-template-columns: minmax(0, 1fr); } }
+.issue-header { display: flex; align-items: baseline; gap: 12px; margin: 0 0 16px; }
+.issue-key { font-size: 14px; white-space: nowrap; }
+.field-summary { display: flex; align-items: baseline; gap: 12px; flex: 1; min-width: 0; }
+.field-summary h1 { margin: 0; overflow-wrap: anywhere; }
+.field-main { margin: 0 0 20px; }
+.field-main h2, .panel h2 { margin: 0 0 6px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.panel { margin: 0 0 20px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 3px; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.placeholder { color: var(--muted); font-style: italic; }
+button.edit { padding: 0 6px; font-size: 12px; color: var(--muted); background: transparent; border-color: transparent; visibility: hidden; }
+.field:hover > button.edit, .field:hover > h2 > button.edit, button.edit:focus { visibility: visible; }
+.editor { display: flex; flex-direction: column; gap: 6px; margin: 0 0 20px; }
+.editor .label { font-weight: 600; color: var(--muted); }
+.editor input, .editor select, .editor textarea { width: 100%; }
+.editor-buttons { display: flex; gap: 8px; }
+.side-panel { padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 3px; }
+.side-panel .field-side { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.side-panel .field-side:last-child { border-bottom: 0; }
+.side-panel .label { color: var(--muted); }
+.side-panel .value { overflow-wrap: anywhere; }
+.side-panel .editor { margin: 0; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.side-panel .status-field .inline-reason { grid-column: 2 / -1; flex-wrap: wrap; }

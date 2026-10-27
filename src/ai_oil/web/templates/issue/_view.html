@@ -1,0 +1,33 @@
+{#- The display container of one field; `field` names it. Its id is what Edit and Cancel swap (UI-26). -#}
+{% set edit_button %}<button type="button" class="edit" hx-get="/issues/{{ issue.key }}/edit/{{ field }}" hx-target="#field-{{ field }}" hx-swap="outerHTML" aria-label="Edit {{ field_labels[field]|lower }}">Edit</button>{% endset -%}
+{% if field == "summary" -%}
+<div class="field field-summary" id="field-summary">
+  <h1 class="value">{{ issue.summary }}</h1>
+  {{ edit_button }}
+</div>
+{%- elif field in main_fields -%}
+<section class="field field-main" id="field-{{ field }}">
+  <h2>{{ field_labels[field] }} {{ edit_button }}</h2>
+  {% if field == "description" -%}
+  <div class="value text">{{ issue.description }}</div>
+  {%- elif issue.acceptance_criteria -%}
+  <div class="value text">{{ issue.acceptance_criteria }}</div>
+  {%- else -%}
+  <div class="value placeholder">No acceptance criteria</div>
+  {%- endif %}
+</section>
+{%- else -%}
+<div class="field field-side" id="field-{{ field }}">
+  <span class="label">{{ field_labels[field] }}</span>
+  <span class="value{% if field == "due_date" and values.overdue %} overdue{% endif %}">
+    {%- if field == "priority" %}{{ issue.priority }}
+    {%- elif field == "issue_type" %}{{ issue.issue_type }}
+    {%- elif field == "assignee" %}{{ values.assignee or "Unassigned" }}
+    {%- elif field == "reporter" %}{{ values.reporter }}
+    {%- elif field == "due_date" %}{{ values.due or "—" }}{% if values.original_due %} <span class="muted">(original {{ values.original_due }})</span>{% endif %}
+    {%- elif field == "parent" %}{% if issue.parent_key %}<a href="/issues/{{ issue.parent_key }}">{{ issue.parent_key }}</a>{% else %}—{% endif %}
+    {%- endif -%}
+  </span>
+  {{ edit_button }}
+</div>
+{%- endif %}
