@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Sync log — AI_OIL{% endblock %}
+{% block content %}
+<h1>Sync log</h1>
+<form class="inline-form" action="/sync/all" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit" class="primary">Sync all now</button>
+  <span class="muted">Fetches every linked source of the open issues and waits until the run is finished.</span>
+</form>
+{% if runs %}
+<table class="sync-runs">
+  <thead>
+    <tr>
+      <th>Started</th><th>Trigger</th><th>Scope</th><th>Status</th><th class="num">Duration</th>
+      <th class="num">Checked</th><th class="num">Changed</th><th class="num">New versions</th><th class="num">New entries</th><th class="num">Errors</th>
+    </tr>
+  </thead>
+  {% for run in runs %}
+  <tbody class="sync-run" id="run-{{ run.id }}">
+    <tr>
+      <td>{{ run.started }}</td>
+      <td>{{ run.trigger }}</td>
+      <td>{{ run.scope }}</td>
+      <td><span class="badge status-{{ run.status }}">{{ run.status }}</span></td>
+      <td class="num">{{ run.duration }}</td>
+      <td class="num">{{ run.checked }}</td>
+      <td class="num">{{ run.changed }}</td>
+      <td class="num">{{ run.new_versions }}</td>
+      <td class="num">{{ run.new_entries }}</td>
+      <td class="num">{{ run.errors }}</td>
+    </tr>
+    <tr class="sync-details">
+      <td colspan="10">
+        <details{% if open_run == run.id %} open{% endif %}>
+          <summary>{{ run.results|length }} result{{ "" if run.results|length == 1 else "s" }} other than unchanged</summary>
+          {% if run.results %}
+          <table class="sync-results">
+            <thead><tr><th>Outcome</th><th>Source</th><th>Connector</th><th>Error</th><th class="num">Duration</th></tr></thead>
+            <tbody>
+              {% for result in run.results %}
+              <tr>
+                <td><span class="badge outcome-{{ result.outcome }}">{{ result.outcome }}</span></td>
+                <td><a href="/sources/{{ result.source_object_id }}">{{ result.label }}</a></td>
+                <td>{{ result.connector }}</td>
+                <td>{% if result.error %}<span class="fetch-error">{{ result.error }}</span>{% endif %}</td>
+                <td class="num">{{ result.duration }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+        </details>
+      </td>
+    </tr>
+  </tbody>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">No sync has run yet.</p>
+{% endif %}
+{% endblock %}

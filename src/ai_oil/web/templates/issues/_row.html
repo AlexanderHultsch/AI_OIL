@@ -1,7 +1,7 @@
 {% set issue = row.issue %}
 {% set extra = {"columns": columns|join(",")}|tojson %}
 {% set post = "/issues/" ~ issue.key ~ "/inline/" %}
-<tr>
+<tr data-issue-key="{{ issue.key }}">
   {% for column in columns %}
   {% if column == "key" %}<td class="key"><a href="/issues/{{ issue.key }}">{{ issue.key }}</a></td>
   {% elif column == "type" %}<td>{{ issue.issue_type }}</td>

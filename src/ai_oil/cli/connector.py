@@ -9,7 +9,7 @@ from ai_oil import secrets
 from ai_oil.cli.common import transaction
 from ai_oil.errors import ValidationError
 from ai_oil.governance import audit
-from ai_oil.sources import registry
+from ai_oil.sources import health, registry
 
 
 def _add_setting_options(parser: argparse.ArgumentParser) -> None:
@@ -165,12 +165,6 @@ def run_set(args: argparse.Namespace) -> int:
     return 0
 
 
-def _credential_state(row: registry.ConnectorRow) -> str:
-    if row.credential_ref is None:
-        return "-"
-    return "stored" if secrets.get_secret(row.credential_ref) is not None else "missing"
-
-
 def run_list(args: argparse.Namespace) -> int:
     with transaction(args) as conn:
         rows = registry.list_connectors(conn)
@@ -179,36 +173,9 @@ def run_list(args: argparse.Namespace) -> int:
         print(f"warning: connector plugin {name} failed to load: {error}", file=sys.stderr)
     for row in rows:
         state = "enabled" if row.enabled else "disabled"
-        print(f"{row.id}  {row.name}  {row.type}  {state}  credential: {_credential_state(row)}")
+        print(f"{row.id}  {row.name}  {row.type}  {state}  credential: {health.credential_state(row)}")
         print(f"    settings: {json.dumps(row.settings, sort_keys=True)}")
     return 0
-
-
-def _check_configuration(row: registry.ConnectorRow) -> tuple[object | None, list[str]]:
-    """The plugin instance (None if it cannot start) and the configuration check lines (CON-6)."""
-    lines: list[str] = []
-    try:
-        connector: object | None = registry.instantiate(row)
-    except Exception as exc:
-        connector = None
-        lines.append(f"  [FAIL] plugin: {type(exc).__name__}: {exc}")
-    else:
-        lines.append("  [ok] plugin loaded")
-    if row.credential_ref is not None:
-        if secrets.get_secret(row.credential_ref) is not None:
-            lines.append("  [ok] credential stored")
-        else:
-            lines.append(f"  [FAIL] credential missing for {row.credential_ref}")
-    return connector, lines
-
-
-def _check_live(connector: object) -> list[str]:
-    """The read-only check against the real system (CON-6, class A)."""
-    try:
-        report = connector.check()  # type: ignore[attr-defined]
-    except Exception as exc:
-        return [f"  [FAIL] live check: {type(exc).__name__}: {exc}"]
-    return [f"  [{'ok' if check.ok else 'FAIL'}] {check.name}: {check.detail}" for check in report.checks]
 
 
 def run_check(args: argparse.Namespace) -> int:
@@ -224,12 +191,12 @@ def run_check(args: argparse.Namespace) -> int:
         if not row.enabled:
             print("  [--] disabled")
             continue
-        connector, lines = _check_configuration(row)
+        connector, lines = health.check_configuration(row)
         if args.live and connector is not None:
-            lines += _check_live(connector)
-        failed = failed or any(line.startswith("  [FAIL]") for line in lines)
+            lines += health.check_live(connector)
+        failed = failed or any(not line.ok for line in lines)
         for line in lines:
-            print(line)
+            print(line.format())
     return 1 if failed else 0
 
 

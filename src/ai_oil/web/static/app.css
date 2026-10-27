@@ -15,8 +15,8 @@ body {
   margin: 0;
   display: grid;
   grid-template-columns: 220px 1fr;
-  grid-template-rows: 48px 1fr;
-  grid-template-areas: "header header" "nav main";
+  grid-template-rows: 48px 1fr auto;
+  grid-template-areas: "header header" "nav main" "nav footer";
   min-height: 100vh;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
@@ -269,3 +269,33 @@ table.diff .diff_sub { background: #ffebe6; }
 .merge-pair { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 2px 8px; margin: 0 0 16px; }
 .merge-pair dt { color: var(--muted); }
 .merge-pair dd { margin: 0; }
+
+.card { margin: 0 0 16px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 3px; }
+.card-head { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; }
+.card-head h2 { margin: 0; font-size: 16px; }
+.card-facts { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 2px 8px; margin: 0 0 8px; }
+.card-facts dt { color: var(--muted); }
+.card-facts dd { margin: 0; overflow-wrap: anywhere; }
+.card pre.settings { margin: 0; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; overflow-x: auto; }
+.check-lines { list-style: none; margin: 0 0 8px; padding: 0; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+.check-lines li { padding: 1px 0; overflow-wrap: anywhere; }
+.check-fail { color: var(--danger); }
+.check-off { color: var(--muted); }
+.card-actions { display: flex; gap: 8px; }
+.card-actions form { margin: 0; }
+.badge-ok { color: #006644; background: #e3fcef; }
+.badge-off { color: var(--muted); }
+.warning { margin: 0 0 16px; padding: 10px 14px; background: #fffae6; border: 1px solid #ff991f; border-radius: 3px; }
+.warning ul { margin: 4px 0 0; padding-left: 18px; }
+
+.sync-runs .sync-details td { padding-top: 0; }
+.sync-runs .sync-run:hover { background: #f9fafb; }
+.sync-run > tr:first-child td { border-bottom: 0; }
+.sync-run summary { cursor: pointer; color: var(--muted); }
+.sync-results { margin: 6px 0 0; }
+.status-failed, .status-partial, .outcome-error { color: var(--danger); background: var(--danger-bg); }
+.status-ok, .outcome-new, .outcome-changed { color: #006644; background: #e3fcef; }
+
+tr.kb-selected, tr.kb-selected:hover { background: #deebff; outline: 2px solid var(--accent); outline-offset: -2px; }
+.shortcuts-help { grid-area: footer; padding: 8px 24px 12px; font-size: 12px; }
+kbd { padding: 0 4px; font-family: inherit; font-size: 11px; background: var(--panel); border: 1px solid var(--border); border-radius: 3px; }

@@ -1,0 +1,39 @@
+{#- One connector instance; the live check replaces the card with the same id (CON-6). -#}
+<section class="card connector" id="connector-{{ card.id }}">
+  <header class="card-head">
+    <h2>{{ card.name }}</h2>
+    <span class="muted">{{ card.type }}</span>
+    <span class="badge {{ "badge-ok" if card.enabled else "badge-off" }}">{{ "enabled" if card.enabled else "disabled" }}</span>
+  </header>
+  <dl class="card-facts">
+    <dt>Credential</dt><dd>{{ card.credential }}</dd>
+    <dt>Last sync</dt><dd>{{ card.last_sync }}</dd>
+    <dt>Fetch errors</dt><dd>{% if card.error_objects %}<span class="fetch-error">{{ card.error_objects }} linked object{{ "" if card.error_objects == 1 else "s" }}</span>{% else %}0{% endif %}</dd>
+    <dt>Settings</dt><dd><pre class="settings">{{ card.settings }}</pre></dd>
+  </dl>
+  <ul class="check-lines">
+    {%- if not card.enabled %}
+    <li class="check-off">[--] disabled</li>
+    {%- endif %}
+    {%- for line in card.config_lines %}
+    <li class="{{ "check-ok" if line.ok else "check-fail" }}">{{ line.format().strip() }}</li>
+    {%- endfor %}
+    {%- for line in card.live_lines %}
+    <li class="{{ "check-ok" if line.ok else "check-fail" }}">{{ line.format().strip() }}</li>
+    {%- endfor %}
+  </ul>
+  <div class="card-actions">
+    {% if card.enabled -%}
+    <button type="button" hx-post="/connectors/{{ card.id }}/check" hx-target="#connector-{{ card.id }}" hx-swap="outerHTML">Live check</button>
+    <form action="/connectors/{{ card.id }}/disable" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Disable</button>
+    </form>
+    {%- else -%}
+    <form action="/connectors/{{ card.id }}/enable" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Enable</button>
+    </form>
+    {%- endif %}
+  </div>
+</section>

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Connectors — AI_OIL{% endblock %}
+{% block content %}
+<h1>Connectors</h1>
+{% if load_errors %}
+<div class="warning" role="alert">
+  <strong>Connector plugins that failed to load</strong>
+  <ul>
+    {% for name, error in load_errors.items() %}<li><code>{{ name }}</code>: {{ error }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% for card in cards %}
+{% include "connectors/_card.html" %}
+{% else %}
+<p class="muted">No connectors configured yet.</p>
+{% endfor %}
+<p class="muted">Connectors are added and changed on the command line: <code>oil connector add TYPE NAME</code> and <code>oil connector set NAME</code>.</p>
+{% endblock %}

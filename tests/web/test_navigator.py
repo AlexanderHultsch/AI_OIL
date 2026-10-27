@@ -52,7 +52,7 @@ def table(page: str) -> tuple[list[str], dict[str, dict[str, str]], dict[str, di
     attributes: dict[str, dict[str, str]] = {}
     body = re.search(r"<tbody>(.*?)</tbody>", page, re.DOTALL)
     assert body is not None
-    for row in re.findall(r"<tr>(.*?)</tr>", body.group(1), re.DOTALL):
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", body.group(1), re.DOTALL):
         found = re.findall(r"<td([^>]*)>(.*?)</td>", row, re.DOTALL)
         assert len(found) == len(headers)
         key = re.search(r'href="/issues/([A-Z]+-\d+)"', row)

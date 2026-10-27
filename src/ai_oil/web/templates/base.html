@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="/">AI_OIL</a>
     <form class="search" action="/issues" method="get" role="search">
-      <input type="search" name="q" placeholder="Search or OQL…" autocomplete="off">
+      <input type="search" id="global-search" name="q" placeholder="Search or OQL…" autocomplete="off">
     </form>
     <a class="button primary" href="/issues/new">Create</a>
   </header>
@@ -36,5 +36,8 @@
     <div id="flash" role="status" aria-live="polite"></div>
     {% block content %}{% endblock %}
   </main>
+  <footer class="shortcuts-help muted">
+    Keyboard shortcuts: <kbd>c</kbd> create · <kbd>/</kbd> search · <kbd>j</kbd>/<kbd>k</kbd> move in the issue list, <kbd>Enter</kbd> open · <kbd>e</kbd> edit summary · <kbd>m</kbd> comment
+  </footer>
 </body>
 </html>

@@ -16,7 +16,7 @@
   <p class="placeholder">No comments</p>
   {%- endfor %}
   <form class="comment-add" hx-post="/issues/{{ issue.key }}/comments" hx-target="#activity-content">
-    <textarea name="body" rows="3" placeholder="Add a comment" aria-label="Comment" required></textarea>
+    <textarea name="body" id="comment-body" rows="3" placeholder="Add a comment" aria-label="Comment" required></textarea>
     <div class="editor-buttons"><button type="submit" class="primary">Comment</button></div>
   </form>
 </div>

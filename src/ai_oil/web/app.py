@@ -14,6 +14,7 @@ from ai_oil.errors import AiOilError, NotFoundError
 from ai_oil.web.csrf import STATE_CHANGING_METHODS, CsrfProtection
 from ai_oil.web.rendering import is_htmx, render
 from ai_oil.web.routes import (
+    connectors,
     create,
     home,
     issue_detail,
@@ -22,6 +23,7 @@ from ai_oil.web.routes import (
     people,
     projects,
     sources,
+    sync,
 )
 
 WEB_DIR = Path(__file__).resolve().parent
@@ -118,4 +120,6 @@ def create_app(config: Config, engine: sqlalchemy.Engine, *, port: int) -> FastA
     app.include_router(sources.router)
     app.include_router(projects.router)
     app.include_router(people.router)
+    app.include_router(connectors.router)
+    app.include_router(sync.router)
     return app

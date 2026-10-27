@@ -411,7 +411,7 @@ def test_sort_links_keep_the_columns_of_an_active_filter(nav_app: FastAPI, nav_c
     )
     assert [plain_header(h) for h in header_cells(followed.text)] == ["Summary", "Priority", "Due"]
     assert "▲" in [cell for cell in header_cells(followed.text) if "Due" in cell][0]
-    assert followed.text.count("<tr>") == 1 + 2  # header and the two P1/P2 issues
+    assert followed.text.count("<tr") == 1 + 2  # header and the two P1/P2 issues
 
 
 def test_sort_links_follow_href_with_the_filters_columns(nav_app: FastAPI, nav_client: TestClient) -> None:
@@ -512,7 +512,7 @@ def test_closed_issues_offer_only_reopening(nav_client: TestClient) -> None:
 def test_the_row_is_split_into_its_own_template(nav_client: TestClient) -> None:
     page = nav_client.get("/issues").text
 
-    assert page.count("<tr>") == 1 + 4  # header and four open issues
+    assert page.count("<tr") == 1 + 4  # header and four open issues
     for field in navigator.INLINE_FIELDS:
         assert page.count(f'hx-post="/issues/OIL-3/inline/{field}"') == 1
 
@@ -521,7 +521,7 @@ def test_changing_the_status_returns_the_row_and_records_history_and_audit(nav_a
     response = post("/issues/OIL-1/inline/status", {"value": "In Progress", "columns": "key,status,due"})
 
     assert response.status_code == 200
-    assert response.text.lstrip().startswith("<tr>")
+    assert response.text.lstrip().startswith("<tr")
     assert response.text.rstrip().endswith("</tr>")
     assert "<html" not in response.text
     assert selected(response.text) == ["In Progress"]
@@ -634,7 +634,7 @@ def test_status_needing_a_reason_returns_the_reason_form_and_changes_nothing(
     response = post("/issues/OIL-1/inline/status", {"value": target, "columns": "key,status"})
 
     assert response.status_code == 200
-    assert response.text.lstrip().startswith("<tr>")
+    assert response.text.lstrip().startswith("<tr")
     form = re.search(r"<form([^>]*)>(.*?)</form>", response.text, re.DOTALL)
     assert form is not None
     assert 'hx-post="/issues/OIL-1/inline/status"' in form.group(1)

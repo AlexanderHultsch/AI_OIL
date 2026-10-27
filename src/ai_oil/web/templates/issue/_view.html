@@ -1,5 +1,5 @@
 {#- The display container of one field; `field` names it. Its id is what Edit and Cancel swap (UI-26). -#}
-{% set edit_button %}<button type="button" class="edit" hx-get="/issues/{{ issue.key }}/edit/{{ field }}" hx-target="#field-{{ field }}" hx-swap="outerHTML" aria-label="Edit {{ field_labels[field]|lower }}">Edit</button>{% endset -%}
+{% set edit_button %}<button type="button" class="edit" id="edit-{{ field }}" hx-get="/issues/{{ issue.key }}/edit/{{ field }}" hx-target="#field-{{ field }}" hx-swap="outerHTML" aria-label="Edit {{ field_labels[field]|lower }}">Edit</button>{% endset -%}
 {% if field == "summary" -%}
 <div class="field field-summary" id="field-summary">
   <h1 class="value">{{ issue.summary }}</h1>
