@@ -6,8 +6,7 @@
 --   * tables marked [P3] / [P4] / [P5] are created by the migration of that phase;
 --     they are listed here so the model is reviewed as a whole
 
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
+-- PRAGMAs (foreign_keys, WAL) are set per connection by ai_oil.db.engine.
 
 ------------------------------------------------------------------------------
 -- 1. People (DM-20 .. DM-23)
@@ -79,9 +78,9 @@ CREATE TABLE issue (
     description         TEXT    NOT NULL CHECK (length(trim(description)) >= 1),
     acceptance_criteria TEXT,
     status              TEXT    NOT NULL DEFAULT 'New'
-                                CHECK (status IN ('New', 'Ready to Proceed', 'In Progress', 'Blocked', 'Done')),
-    resolution          TEXT    CHECK (resolution IN ('Completed', 'Won''t Do', 'Duplicate')),
+                                CHECK (status IN ('New', 'Ready to Proceed', 'In Progress', 'Blocked', 'Done', 'Cancelled')),
     blocked_reason      TEXT,
+    cancel_reason       TEXT,
     priority            TEXT    NOT NULL DEFAULT 'P4' CHECK (priority IN ('P1', 'P2', 'P3', 'P4', 'P5')),
     assignee_id         INTEGER REFERENCES person(id),
     reporter_id         INTEGER NOT NULL REFERENCES person(id),
@@ -95,7 +94,7 @@ CREATE TABLE issue (
     resolved_at         TEXT,
     UNIQUE (project_id, number),
     CHECK (parent_id IS NULL OR parent_id <> id),
-    CHECK ((status = 'Done') = (resolution IS NOT NULL)),                      -- DM-9
+    CHECK (status <> 'Cancelled' OR length(trim(coalesce(cancel_reason, ''))) > 0), -- DM-9
     CHECK (status <> 'Blocked' OR length(trim(coalesce(blocked_reason, ''))) > 0), -- DM-10
     CHECK ((original_due_date IS NULL) = (revised_due_date IS NULL))           -- DM-12
 );
@@ -480,4 +479,4 @@ CREATE TABLE schema_version (
     applied_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     description     TEXT    NOT NULL
 );
-INSERT INTO schema_version (version, description) VALUES (1, 'Initial schema — spec v0.1');
+INSERT INTO schema_version (version, description) VALUES (1, 'Initial schema — spec v0.2');

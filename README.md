@@ -11,7 +11,7 @@ Specification phase. Nothing is built yet.
 | Document | Content |
 |---|---|
 | [`docs/specification.md`](docs/specification.md) | The specification (v0.1, draft for review). Start with chapter 5, the data model |
-| [`schema/schema_v1.sql`](schema/schema_v1.sql) | The data model as an executable SQLite schema |
+| [`src/ai_oil/db/sql/0001_baseline.sql`](src/ai_oil/db/sql/0001_baseline.sql) | The data model as an executable SQLite schema |
 
 ## Phases
 

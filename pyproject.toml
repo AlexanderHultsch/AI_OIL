@@ -31,11 +31,11 @@ oil = "ai_oil.cli.main:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ai_oil = ["db/sql/*.sql", "db/migrations/*.ini", "db/migrations/*.mako"]
+ai_oil = ["db/sql/*.sql", "db/migrations/*.py", "db/migrations/*.mako", "db/migrations/versions/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra --import-mode=importlib"
 
 [tool.ruff]
 line-length = 110
