@@ -4,11 +4,11 @@
 
 | | |
 |---|---|
-| **Version** | 0.1 — draft for review |
-| **Date** | 26 October 2026 |
+| **Version** | 0.2 — approved for implementation |
+| **Date** | 27 October 2026 |
 | **Owner** | Alex Hultsch |
-| **Basis** | Requirements interview of 26 October 2026 (Appendix A) |
-| **Executable data model** | [`schema/schema_v1.sql`](../schema/schema_v1.sql) — authoritative where it and chapter 5 differ |
+| **Basis** | Requirements interview of 26 October 2026 (Appendix A); implementation decisions of 27 October 2026 (Appendix C) |
+| **Executable data model** | [`src/ai_oil/db/sql/0001_baseline.sql`](../src/ai_oil/db/sql/0001_baseline.sql) — authoritative where it and chapter 5 differ |
 
 ---
 
@@ -77,7 +77,7 @@ AI_OIL is a deliberately simplified Jira. **Each issue carries a dictionary of l
 | **P2** | Web interface | Jira-like local web app: issue navigator with OQL and saved filters, issue detail page, inline edits, comments, history, source panel with refresh and version diff | none |
 | **P3** | AI enrichment | LLM provider abstraction, summaries per source and per issue, extraction of action items, open questions, decisions and risks, link suggestions, import inbox for new issues, field-change proposals, proposal review UI | yes |
 | **P4** | AI assistant | "My Inbox" (waiting on me, due, overdue, blocked, stale), daily briefing, unlinked-email detection, Jira mentions and assignments | yes |
-| **P5** | Write-back and dashboards | Approval tokens, Jira comment/transition, Outlook draft creation, dashboards, Teams chat connector | yes |
+| **P5** | Write-back and dashboards | Approval tokens, Jira comment/transition, Outlook draft creation, dashboards (server-side SVG) | yes |
 
 **Exit criteria**
 
@@ -267,10 +267,10 @@ erDiagram
 | ID | Requirement |
 |---|---|
 | DM-5 | Every issue belongs to exactly one project and has a key `<PROJECT>-<number>`, e.g. `OIL-42` |
-| DM-6 | Key, number and project are immutable (enforced by trigger). Moving an issue to another project is not supported in v1; the workaround is to clone it and close the original as `Duplicate` |
+| DM-6 | Key, number and project are immutable (enforced by trigger). Moving an issue to another project is not supported in v1; the workaround is to clone it, add a `duplicates` link, and cancel the original with the reason "Moved to <new key>" |
 | DM-7 | `summary` (≤ 120 characters) and `description` are mandatory. The summary is action-oriented, and the description gives the context |
 | DM-8 | Status values and transitions follow 5.6 |
-| DM-9 | `resolution` is set if and only if `status = Done` (enforced by CHECK) |
+| DM-9 | `cancel_reason` is mandatory while `status = Cancelled` (enforced by CHECK) |
 | DM-10 | `blocked_reason` is mandatory while `status = Blocked` (enforced by CHECK) |
 | DM-11 | Priority is `P1`–`P5` (5.7), default `P4` |
 | DM-12 | `original_due_date` is set together with the first due date and is never changed afterwards (enforced by trigger). `revised_due_date` is the date that counts, and every change to it is recorded in history. Both are empty, or both are set |
@@ -292,7 +292,7 @@ erDiagram
 | `description` | text (Markdown) | yes | user | What and why, with context |
 | `acceptance_criteria` | text | no | user | How you know it is done. Basis for the AI progress check in P3 |
 | `status` | enum | yes | user | 5.6 |
-| `resolution` | enum | when Done | user | `Completed` · `Won't Do` · `Duplicate` |
+| `cancel_reason` | text | when Cancelled | user | Why the issue is not pursued |
 | `blocked_reason` | text | when Blocked | user | What or whom it waits for |
 | `priority` | enum | yes | user | `P1`–`P5` |
 | `assignee_id` | → person | no | user | Anyone, including external people |
@@ -317,11 +317,16 @@ stateDiagram-v2
     New --> Blocked : reason required
     Blocked --> InProgress : unblocked
     Blocked --> ReadyToProceed : unblocked
-    New --> Done : resolution required
-    ReadyToProceed --> Done : resolution required
-    InProgress --> Done : resolution required
-    Blocked --> Done : resolution required
+    New --> Done
+    ReadyToProceed --> Done
+    InProgress --> Done
+    Blocked --> Done
+    New --> Cancelled : reason required
+    ReadyToProceed --> Cancelled : reason required
+    InProgress --> Cancelled : reason required
+    Blocked --> Cancelled : reason required
     Done --> InProgress : reopen
+    Cancelled --> InProgress : reopen
     ReadyToProceed: Ready to Proceed
     InProgress: In Progress
 ```
@@ -332,15 +337,14 @@ stateDiagram-v2
 | `Ready to Proceed` | Triaged and clear, but work has not started | To Do |
 | `In Progress` | Actively worked on | In Progress |
 | `Blocked` | Waits on a person or dependency; `blocked_reason` is mandatory | In Progress |
-| `Done` | Finished; `resolution` says how (`Completed`, `Won't Do`, `Duplicate`) | Done |
+| `Done` | Finished | Done |
+| `Cancelled` | Not pursued; `cancel_reason` is mandatory. A duplicate is cancelled with a `duplicates` link to the surviving issue | Done |
 
 | ID | Requirement |
 |---|---|
 | DM-16 | Transitions not shown in the diagram are rejected by the domain service |
-| DM-17 | Reopening clears `resolution` and `resolved_at` and records both in history |
+| DM-17 | `resolved_at` is set when the status becomes Done or Cancelled. Reopening (Done/Cancelled → In Progress) clears `resolved_at` and `cancel_reason`; leaving Blocked clears `blocked_reason`. Every cleared value is recorded in history |
 | DM-18 | `statusCategory` (To Do / In Progress / Done) is derived from the status and is not stored. It is available in OQL |
-
-> Cancelled work is expressed as `Done` + `Won't Do`, the way Jira does it, so the five statuses chosen in the interview stay unchanged. See OI-1 if a separate `Cancelled` status is preferred.
 
 ### 5.7 Priority
 
@@ -559,6 +563,7 @@ class Connector(Protocol):
 | CON-3 | A connector failure affects only its own objects (AP-10) |
 | CON-4 | Connectors can be enabled and disabled individually in configuration and in the UI. A disabled connector's objects are reported as `skipped`, not as errors |
 | CON-5 | A corporate CA bundle path is configurable for every HTTP connector (SSL inspection) |
+| CON-6 | Every connector's system access (COM, HTTP, file system) sits behind a small injectable interface, so tests run against recorded fixtures. `oil connector check --live` runs a read-only check against the real system and is the acceptance test on the target laptop |
 
 ### 6.2 Manual connector (P1, built first)
 
@@ -626,9 +631,9 @@ class Connector(Protocol):
 
 Text is capped at `max_text_chars` (default 2,000,000) per version, and truncation is flagged in metadata.
 
-### 6.8 Teams connector (P5)
+### 6.8 Teams connector (deferred)
 
-Through the same plugin interface. The expected route is a Power Automate flow that writes channel and chat messages into a synced file, because direct Graph access needs an IT app registration. Design it when P5 starts.
+Not built in the current plan (decision of 27 October 2026). Through the same plugin interface. The expected route is a Power Automate flow that writes channel and chat messages into a synced file, because direct Graph access needs an IT app registration. Design it when P5 starts.
 
 ---
 
@@ -641,7 +646,7 @@ Through the same plugin interface. The expected route is a Power Automate flow t
 | SYNC-3 | Objects are fetched in parallel per connector, up to a configurable limit (Jira/Confluence default 4, Outlook 1, because COM is single-threaded) |
 | SYNC-4 | One failing object never aborts the run (AP-10). The run ends as `partial` and lists the failures |
 | SYNC-5 | A source that is linked to several issues is fetched once per run |
-| SYNC-6 | Done issues are not synced by `--all` unless `--include-done` is given. Their content stays searchable |
+| SYNC-6 | `--all` skips issues in status category Done (Done, Cancelled) whose `resolved_at` is more than 14 days ago, unless `--include-done` is given. Their content stays searchable |
 | SYNC-7 | The CLI and UI show a summary after every run: objects checked, changed, new versions, new entries, errors, and duration |
 | SYNC-8 | `last_checked_at` per source is visible everywhere the source is shown, so stale data is recognisable |
 | SYNC-9 | A newly linked object is fetched immediately (initial fetch), so the link dialog shows its content right away |
@@ -690,7 +695,7 @@ order      := field ["ASC" | "DESC"]
 
 | Field | Type | Notes |
 |---|---|---|
-| `project`, `key`, `type`, `status`, `statusCategory`, `priority`, `resolution` | enum/text | |
+| `project`, `key`, `type`, `status`, `statusCategory`, `priority` | enum/text | `statusCategory` Done covers Done and Cancelled |
 | `assignee`, `reporter` | person | Name, email, or `me()` |
 | `label`, `component` | multi | |
 | `parent`, `issueLink` | issue key | `issueLink` matches any link type. `blocks`, `blockedBy` and `duplicates` are also available |
@@ -722,7 +727,7 @@ The CLI is the only interface in P1 and remains available afterwards for scripti
 | Command | Does |
 |---|---|
 | `oil init` | Creates the database and config, asks for "me" (name, email addresses, Atlassian accountId) |
-| `oil connector add outlook\|jira\|confluence\|sharepoint` / `list` / `check` / `enable` / `disable` | Manage connector instances; secrets go to Credential Manager |
+| `oil connector add outlook\|jira\|confluence\|sharepoint` / `list` / `check [--live]` / `enable` / `disable` | Manage connector instances; secrets go to Credential Manager |
 | `oil project add KEY "Name"` / `list` | Projects |
 | `oil issue create -p OIL -s "Summary" -d "Description" [--priority P2] [--assignee …] [--due 2026-11-15] [--label …]` | Create; prints the key |
 | `oil issue edit OIL-42 --status Blocked --blocked-reason "…"` | Any field change (history written) |
@@ -764,7 +769,7 @@ The CLI is the only interface in P1 and remains available afterwards for scripti
 
 | ID | Requirement |
 |---|---|
-| UI-20 | Layout like Jira. Main column: summary, description, acceptance criteria, **Sources** panel, **Activity**. Side panel: status (transition dropdown that enforces DM-16), resolution, blocked reason, priority, assignee, reporter, due dates (original shown read-only beside revised), labels, components, parent, issue links, origin, created, updated |
+| UI-20 | Layout like Jira. Main column: summary, description, acceptance criteria, **Sources** panel, **Activity**. Side panel: status (transition dropdown that enforces DM-16), blocked reason, cancel reason, priority, assignee, reporter, due dates (original shown read-only beside revised), labels, components, parent, issue links, origin, created, updated |
 | UI-21 | **Sources panel** is the dictionary, grouped by type. Each entry shows title, role, last checked, last changed, number of versions and entries, a status icon, *Open in source*, *Refresh*, and *Unlink*. A *Refresh all* button syncs the issue (SYNC-1) |
 | UI-22 | **Link source** dialog: one input field that accepts URL, key, path or subject (all connectors' `parse_reference` are tried), plus the buttons *Use selected Outlook email* and *New note*. It shows a preview from `resolve` before linking |
 | UI-23 | **Activity** tabs: *All* (one chronological timeline merging comments, history, email messages, Jira comments and changes, Confluence comments and new versions), *Comments*, *History*, *Source updates* |
@@ -790,7 +795,7 @@ The CLI is the only interface in P1 and remains available afterwards for scripti
 
 | ID | Requirement |
 |---|---|
-| AI-1 | One interface `complete(task, messages, output_schema) -> validated JSON`. The provider and model are chosen per task type in configuration (AP-8). Candidates are the Claude API, Azure OpenAI and a local model (OI-3) |
+| AI-1 | One interface `complete(task, messages, output_schema) -> validated JSON`. The provider and model are chosen per task type in configuration (AP-8). The production adapter calls the **OpenCode CLI** (`opencode run --format json --model <provider>/<model>`, JSON Lines output: concatenate `text` events, tokens from `step_finish`, ignore unknown event types, no `text` event = error). Tests use a deterministic fake provider
 | AI-2 | Every call writes a `model_call` row and an audit entry: provider, model, prompt version, tokens, duration and status |
 | AI-3 | All output is structured and validated against a JSON schema. Invalid output is stored as `rejected_output` and never applied |
 | AI-4 | Prompts live in a versioned prompt library (`prompts/<task>/<version>.md`), separate from code. `prompt_version` is recorded |
@@ -877,8 +882,8 @@ Classes C–E do not exist before P5.
 | WB-1 | Write-back is always an `external_action` proposal (class C–E), shown with a full preview, and executed only with a token (GOV-6) |
 | WB-2 | First write actions: add a Jira comment, transition a Jira issue, create an Outlook **draft** (never send directly), add a Confluence comment |
 | WB-3 | Reminder drafting: the AI drafts a reminder for an item in *Waiting on others* (Blocked issues), and the user approves the draft before it is saved to Outlook Drafts |
-| WB-4 | Dashboards: issues by status and project, overdue trend, created vs resolved per week, aging of open issues, "waiting on me" count over time. Gadgets are based on saved filters, as in Jira |
-| WB-5 | Teams chat connector (6.8) |
+| WB-4 | Dashboards, drawn as server-side inline SVG (no chart library, no CDN): issues by status and project, overdue trend, created vs resolved per week, aging of open issues, "waiting on me" count over time. Gadgets are based on saved filters, as in Jira |
+| WB-5 | Teams chat connector (6.8) — deferred, not in the current plan |
 
 ---
 
@@ -903,16 +908,16 @@ Classes C–E do not exist before P5.
 
 | ID | Item | Needed by | Proposal |
 |---|---|---|---|
-| OI-1 | `Cancelled` as its own status, or `Done` + resolution `Won't Do` | P1 start | Resolution (as in this spec); keeps the interview's five statuses |
-| OI-2 | Outlook folders in scope: online archive, PST files, shared mailboxes? | P1 Outlook connector | Inbox + subfolders + Sent Items first; archive later |
-| OI-3 | LLM provider and model per task | P3 start | Decide with IT. The provider abstraction makes this a configuration change |
-| OI-4 | Default scan window for the import inbox and unlinked email | P3 | Since last scan, first run 14 days |
-| OI-5 | Which Jira projects and Confluence spaces `search_candidates` may search | P3 | Configured list per connector |
-| OI-6 | Custom fields per project | after P2 | Add an `issue_field_value` EAV table when there is a concrete need |
-| OI-7 | Should Done issues keep syncing for a grace period (to catch late replies)? | P1 | Yes, 14 days after `resolved_at` |
-| OI-8 | Keep raw SharePoint files in the blob store as well? | P1 | No (SharePoint has version history). Text only |
+| OI-1 | `Cancelled` as its own status, or `Done` + resolution `Won't Do` | — | **Decided:** `Cancelled` is a sixth status with a mandatory reason; no resolution field |
+| OI-2 | Outlook folders in scope: online archive, PST files, shared mailboxes? | P1 Outlook connector | **Decided:** Inbox + subfolders + Sent Items first; archive later |
+| OI-3 | LLM provider and model per task | — | **Decided:** OpenCode CLI with the company-internal model; model per task in configuration |
+| OI-4 | Default scan window for the import inbox and unlinked email | P3 | **Decided:** Since last scan, first run 14 days |
+| OI-5 | Which Jira projects and Confluence spaces `search_candidates` may search | P3 | **Decided:** Configured list per connector |
+| OI-6 | Custom fields per project | after P2 | **Decided:** Add an `issue_field_value` EAV table when there is a concrete need |
+| OI-7 | Should Done issues keep syncing for a grace period (to catch late replies)? | P1 | **Decided:** Yes, 14 days after `resolved_at` |
+| OI-8 | Keep raw SharePoint files in the blob store as well? | P1 | **Decided:** No (SharePoint has version history). Text only |
 | OI-9 | Spike: reliability of `GetConversation()` across folders in cached Exchange mode on the target laptop | P1, first week | Spike before building CON-22 |
-| OI-10 | Semantic search with embeddings | P5 | Only if keyword search proves insufficient |
+| OI-10 | Semantic search with embeddings | P5 | **Decided:** Only if keyword search proves insufficient |
 
 ---
 
@@ -989,3 +994,14 @@ Classes C–E do not exist before P5.
 | Evidence | Pointer from an AI output to the exact version or entry it is based on |
 | OQL | OIL Query Language: the JQL-like query language of chapter 8 |
 | Cursor | A connector's change marker per source object |
+
+## Appendix C — Implementation decisions (27 October 2026)
+
+| # | Topic | Decision |
+|---|---|---|
+| 1 | Cancelled | Sixth status, terminal (category Done), reachable from every open status, mandatory `cancel_reason`, reopen to In Progress. The `resolution` field is removed; duplicates are expressed with the `duplicates` issue link |
+| 2 | LLM adapter | OpenCode CLI adapter (AI-1) with the company-internal model, plus a deterministic fake for tests |
+| 3 | Connector verification | Recorded fixtures behind injectable interfaces (CON-6), plus `oil connector check --live` for the target laptop |
+| 4 | Teams chat | Deferred, not in the current plan |
+| 5 | Dashboard charts | Server-side inline SVG |
+| 6 | Open items OI-2, OI-4 to OI-8, OI-10 | The proposals in chapter 16 are adopted |
