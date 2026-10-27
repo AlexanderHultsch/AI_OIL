@@ -10,6 +10,7 @@ import sqlalchemy
 
 from ai_oil.cli.context import open_context
 from ai_oil.domain import comments, history, issue_links, issues, people
+from ai_oil.sources import linking
 
 _DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -90,6 +91,16 @@ def format_issue(
         lines += ["", "Links:"]
         lines += [
             f"  {link.label} {link.other_key}  {link.other_summary} [{link.other_status}]" for link in links
+        ]
+
+    sources = linking.list_issue_sources(conn, issue.key)
+    if sources:
+        lines += ["", "Sources:"]
+        lines += [
+            f"  #{source.source_object_id} {source.object_type}"
+            f" {source.display_ref or source.title or source.external_id} [{source.role}]"
+            f" {source.fetch_status}, checked {source.last_checked_at or 'never'}"
+            for source in sources
         ]
 
     live_comments = comments.list_comments(conn, issue.key)

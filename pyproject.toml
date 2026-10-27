@@ -27,6 +27,9 @@ dev = ["pytest>=8", "ruff>=0.5"]
 [project.scripts]
 oil = "ai_oil.cli.main:main"
 
+[project.entry-points."ai_oil.connectors"]
+manual = "ai_oil.connectors.manual:ManualConnector"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
