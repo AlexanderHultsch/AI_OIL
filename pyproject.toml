@@ -32,6 +32,7 @@ confluence = "ai_oil.connectors.confluence:ConfluenceConnector"
 jira = "ai_oil.connectors.jira:JiraConnector"
 manual = "ai_oil.connectors.manual:ManualConnector"
 outlook = "ai_oil.connectors.outlook:OutlookConnector"
+sharepoint = "ai_oil.connectors.sharepoint:SharePointConnector"
 
 [tool.setuptools.packages.find]
 where = ["src"]
