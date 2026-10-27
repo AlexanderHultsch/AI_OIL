@@ -124,6 +124,20 @@ class MeStage:
             if console.confirm("Keep these details?", default=True):
                 return StageResult("done", [f"Me: {me.display_name} <{', '.join(known)}>"])
 
+        def validate_addresses(text: str) -> str | None:
+            error = _validate_addresses(text)
+            if error is not None:
+                return error
+            with ctx.engine.connect() as conn:
+                for address in _split_addresses(text):
+                    owner = people.find_person_by_identity(conn, "email", address)
+                    if owner is not None and (me is None or owner.id != me.id):
+                        return (
+                            f"{address} belongs to {owner.display_name} — leave it out, "
+                            "or merge that person into you on the People page first"
+                        )
+            return None
+
         name = console.ask(
             "Your name",
             default=me.display_name if me is not None else ctx.probe.display_name(),
@@ -134,7 +148,7 @@ class MeStage:
             console.ask(
                 "Your e-mail address(es), separated by commas",
                 default=default_addresses,
-                validate=_validate_addresses,
+                validate=validate_addresses,
             )
         )
 

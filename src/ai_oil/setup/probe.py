@@ -4,13 +4,33 @@ import os
 import subprocess
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+
+from ai_oil.errors import ConfigError
 
 _USER_SHELL_FOLDERS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
 _ONEDRIVE_ACCOUNTS = r"Software\Microsoft\OneDrive\Accounts"
 _ONEDRIVE_ENV = ("OneDrive", "OneDriveCommercial", "OneDriveConsumer")
 _NAME_DISPLAY = 3
+_OUTLOOK_PROGID = "Outlook.Application"
+_OUTLOOK_PREFERENCES = r"Software\Microsoft\Office\16.0\Outlook\Preferences"
+_INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+_USER_ENVIRONMENT = "Environment"
+_HWND_BROADCAST = 0xFFFF
+_WM_SETTINGCHANGE = 0x001A
+_SMTO_ABORTIFHUNG = 0x0002
+_BROADCAST_TIMEOUT_MS = 5000
+
+
+@dataclass(frozen=True)
+class InternetSettings:
+    """How this computer reaches the internet: the Windows proxy settings and the environment."""
+
+    proxy_server: str | None = None
+    auto_config_url: str | None = None
+    env_proxy: str | None = None
 
 
 class SystemProbe(Protocol):
@@ -31,6 +51,39 @@ class SystemProbe(Protocol):
     def display_name(self) -> str | None: ...
 
     def is_windows(self) -> bool: ...
+
+    def outlook_installed(self) -> bool:
+        """Whether a classic Outlook is registered for COM (False off Windows)."""
+        ...
+
+    def new_outlook_enabled(self) -> bool:
+        """Whether the "New Outlook" toggle is switched on (False off Windows or if unknown)."""
+        ...
+
+    def outlook_account_addresses(self) -> list[str]:
+        """The SMTP address of every Outlook account, lower-cased; empty if Outlook cannot be asked."""
+        ...
+
+    def internet_settings(self) -> InternetSettings: ...
+
+    def set_user_env(self, name: str, value: str) -> None:
+        """Store an environment variable for the Windows user (and this process); ConfigError elsewhere."""
+        ...
+
+
+def _registry_value(root: str, path: str, name: str) -> object | None:
+    import winreg
+
+    try:
+        with winreg.OpenKey(getattr(winreg, root), path) as key:
+            value, _ = winreg.QueryValueEx(key, name)
+    except OSError:
+        return None
+    return value
+
+
+def _text(value: object | None) -> str | None:
+    return value.strip() or None if isinstance(value, str) else None
 
 
 class LocalProbe:
@@ -115,6 +168,84 @@ class LocalProbe:
         except (AttributeError, OSError):
             return None
         return buffer.value.strip() or None if ok else None
+
+    def outlook_installed(self) -> bool:
+        if not self.is_windows():
+            return False
+        import winreg
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, _OUTLOOK_PROGID):
+                return True
+        except OSError:
+            return False
+
+    def new_outlook_enabled(self) -> bool:
+        if not self.is_windows():
+            return False
+        return _registry_value("HKEY_CURRENT_USER", _OUTLOOK_PREFERENCES, "UseNewOutlook") == 1
+
+    def outlook_account_addresses(self) -> list[str]:
+        if not self.is_windows():
+            return []
+        try:
+            from win32com.client import Dispatch
+
+            accounts = Dispatch(_OUTLOOK_PROGID).GetNamespace("MAPI").Accounts
+            found: dict[str, None] = {}
+            for index in range(1, accounts.Count + 1):
+                address = _text(accounts.Item(index).SmtpAddress)
+                if address:
+                    found.setdefault(address.lower(), None)
+            return list(found)
+        except Exception:
+            return []
+
+    def internet_settings(self) -> InternetSettings:
+        proxy_server: str | None = None
+        auto_config_url: str | None = None
+        if self.is_windows():
+            if _registry_value("HKEY_CURRENT_USER", _INTERNET_SETTINGS, "ProxyEnable") == 1:
+                proxy_server = _text(_registry_value("HKEY_CURRENT_USER", _INTERNET_SETTINGS, "ProxyServer"))
+            auto_config_url = _text(_registry_value("HKEY_CURRENT_USER", _INTERNET_SETTINGS, "AutoConfigURL"))
+        return InternetSettings(
+            proxy_server=proxy_server,
+            auto_config_url=auto_config_url,
+            env_proxy=self.env("HTTPS_PROXY") or self.env("https_proxy"),
+        )
+
+    def set_user_env(self, name: str, value: str) -> None:
+        if not self.is_windows():
+            raise ConfigError("only possible on Windows")
+        import winreg
+
+        try:
+            with winreg.CreateKeyEx(
+                winreg.HKEY_CURRENT_USER, _USER_ENVIRONMENT, 0, winreg.KEY_SET_VALUE
+            ) as key:
+                winreg.SetValueEx(key, name, 0, winreg.REG_EXPAND_SZ, value)
+        except OSError as exc:
+            raise ConfigError(f"cannot store {name} for your Windows user: {exc}") from exc
+        os.environ[name] = value
+        self._announce_environment_change()
+
+    @staticmethod
+    def _announce_environment_change() -> None:
+        """Tell running programs (Explorer) to re-read the user environment, as `setx` does."""
+        try:
+            import ctypes
+
+            ctypes.windll.user32.SendMessageTimeoutW(  # type: ignore[attr-defined]
+                _HWND_BROADCAST,
+                _WM_SETTINGCHANGE,
+                0,
+                _USER_ENVIRONMENT,
+                _SMTO_ABORTIFHUNG,
+                _BROADCAST_TIMEOUT_MS,
+                None,
+            )
+        except (AttributeError, OSError):
+            pass
 
 
 def _normalised(path: Path) -> str:

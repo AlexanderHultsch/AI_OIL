@@ -6,6 +6,7 @@ import pytest
 from ai_oil.cli import setup as setup_command
 from ai_oil.cli.main import main
 from ai_oil.config import CONFIG_TEMPLATE, load_config
+from ai_oil.setup import wizard
 
 
 @pytest.fixture
@@ -27,6 +28,8 @@ def test_list_prints_name_and_title_per_stage(capsys: pytest.CaptureFixture[str]
         "data  Data folder",
         "me  About you",
         "backup  Backups",
+        "outlook  Outlook",
+        "network  Network",
     ]
 
 
@@ -49,7 +52,8 @@ def test_only_with_an_unknown_stage_is_an_error(
 ) -> None:
     scripted([])
     assert main(["--home", str(initialised_home), "setup", "--only", "nope"]) == 1
-    assert "error: unknown stage 'nope'; stages: data, me, backup" in capsys.readouterr().err
+    expected = "error: unknown stage 'nope'; stages: data, me, backup, outlook, network"
+    assert expected in capsys.readouterr().err
 
 
 def test_ctrl_c_aborts_cleanly_and_leaves_the_data_alone(
@@ -69,7 +73,10 @@ def test_a_failing_stage_gives_exit_code_1(scripted, fresh_home: Path) -> None:
     assert "Failed: AI_OIL is not initialised" in console.output
 
 
-def test_the_full_wizard_on_a_fresh_folder(scripted, probe, fresh_home: Path, tmp_path: Path) -> None:
+def test_the_full_wizard_on_a_fresh_folder(
+    scripted, probe, fresh_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(wizard, "STAGES", wizard.STAGES[:3])  # Outlook and the network are tested apart
     probe.name = "Alex"
     probe.upn = "alex@corp.com"
     target = tmp_path / "backups"

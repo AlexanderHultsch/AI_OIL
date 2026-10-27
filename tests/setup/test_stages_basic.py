@@ -7,7 +7,7 @@ import pytest
 from ai_oil.config import CONFIG_TEMPLATE, load_config, set_value
 from ai_oil.db.engine import create_db_engine
 from ai_oil.domain import people
-from ai_oil.errors import ConfigError, ConflictError
+from ai_oil.errors import ConfigError
 from ai_oil.setup.console import SkipStage
 from ai_oil.setup.stages_basic import BackupStage, DataStage, MeStage
 
@@ -199,18 +199,43 @@ def test_me_update_accepting_the_defaults_changes_nothing(make_ctx, initialised_
     assert (me.display_name, emails) == ("Alex", ["alex@example.com"])
 
 
-def test_me_address_of_another_person_is_a_conflict(make_ctx, initialised_home: Path) -> None:
-    engine = create_db_engine(load_config(initialised_home).db_path)
+def _add_person(home: Path, name: str, address: str) -> None:
+    engine = create_db_engine(load_config(home).db_path)
     try:
         with engine.begin() as conn:
-            other = people.create_person(conn, "Pat")
-            people.add_identity(conn, other.id, "email", "pat@corp.com")
+            other = people.create_person(conn, name)
+            people.add_identity(conn, other.id, "email", address)
     finally:
         engine.dispose()
-    ctx = make_ctx(initialised_home, ["n", "Alex", "alex@example.com, pat@corp.com"])
 
-    with pytest.raises(ConflictError, match="Pat"):
-        MeStage().run(ctx)
+
+def test_me_address_of_another_person_is_reasked_and_the_rest_is_stored(
+    make_ctx, initialised_home: Path
+) -> None:
+    _add_person(initialised_home, "Pat", "pat@corp.com")
+    ctx = make_ctx(initialised_home, ["n", "Alex", "alex@example.com, Pat@corp.com", "alex@example.com"])
+
+    result = MeStage().run(ctx)
+
+    assert (
+        "Pat@corp.com belongs to Pat — leave it out, or merge that person into you on the People page first"
+        in ctx.console.output
+    )
+    assert ctx.console.prompts.count("Your e-mail address(es), separated by commas [alex@example.com]: ") == 2
+    assert result.status == "done"
+    assert result.lines == ["Me: Alex <alex@example.com>"]
+    assert _me(initialised_home)[1] == ["alex@example.com"]
+
+
+def test_me_first_run_reasks_an_address_that_belongs_to_someone_else(make_ctx, fresh_home: Path) -> None:
+    ctx = make_ctx(fresh_home, ["Alex", "pat@corp.com", "alex@corp.com"])
+    DataStage().run(ctx)
+    _add_person(fresh_home, "Pat", "pat@corp.com")
+
+    result = MeStage().run(ctx)
+
+    assert "pat@corp.com belongs to Pat" in ctx.console.output
+    assert result.lines == ["Me: Alex <alex@corp.com>"]
 
 
 def test_me_skip(make_ctx, initialised_home: Path) -> None:

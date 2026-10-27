@@ -31,6 +31,7 @@ class SetupContext:
     console: Console
     probe: SystemProbe
     args: argparse.Namespace
+    state: dict[str, object] = field(default_factory=dict)
     _config: Config | None = field(default=None, init=False, repr=False)
     _engine: sqlalchemy.Engine | None = field(default=None, init=False, repr=False)
 

@@ -10,6 +10,7 @@ import pytest
 
 from ai_oil.setup.console import Console
 from ai_oil.setup.model import SetupContext
+from ai_oil.setup.probe import InternetSettings
 
 
 class ScriptedConsole(Console):
@@ -50,6 +51,12 @@ class FakeProbe:
     upn: str | None = None
     name: str | None = None
     windows: bool = True
+    outlook: bool = True
+    new_outlook: bool = False
+    new_outlook_script: list[bool] = field(default_factory=list)
+    accounts: list[str] = field(default_factory=list)
+    internet: InternetSettings = field(default_factory=InternetSettings)
+    user_env: dict[str, str] = field(default_factory=dict)
 
     def env(self, name: str) -> str | None:
         return self.environ.get(name)
@@ -68,6 +75,21 @@ class FakeProbe:
 
     def is_windows(self) -> bool:
         return self.windows
+
+    def outlook_installed(self) -> bool:
+        return self.outlook
+
+    def new_outlook_enabled(self) -> bool:
+        return self.new_outlook_script.pop(0) if self.new_outlook_script else self.new_outlook
+
+    def outlook_account_addresses(self) -> list[str]:
+        return list(self.accounts)
+
+    def internet_settings(self) -> InternetSettings:
+        return self.internet
+
+    def set_user_env(self, name: str, value: str) -> None:
+        self.user_env[name] = value
 
 
 @pytest.fixture

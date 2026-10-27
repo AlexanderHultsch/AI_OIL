@@ -8,11 +8,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from ai_oil.errors import ConfigError
 from ai_oil.setup import probe as probe_module
-from ai_oil.setup.probe import LocalProbe, inside_onedrive
+from ai_oil.setup.probe import InternetSettings, LocalProbe, inside_onedrive
 
 _SHELL_FOLDERS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
 _ACCOUNTS = r"Software\Microsoft\OneDrive\Accounts"
+_OUTLOOK_PREFERENCES = r"Software\Microsoft\Office\16.0\Outlook\Preferences"
+_INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 
 
 class _Key:
@@ -30,17 +33,34 @@ class FakeWinreg:
     """The part of `winreg` the probe uses, over a dict {full key path: {value name: data}}."""
 
     HKEY_CURRENT_USER = object()
+    HKEY_CLASSES_ROOT = object()
+    KEY_SET_VALUE = 2
+    REG_EXPAND_SZ = 2
 
-    def __init__(self, keys: dict[str, dict[str, str]]) -> None:
+    def __init__(self, keys: dict[str, dict[str, object]]) -> None:
         self.keys = keys
+        self.written: list[tuple[str, str, int, str]] = []
 
     def OpenKey(self, parent, sub: str) -> _Key:  # noqa: N802
-        path = sub if parent is self.HKEY_CURRENT_USER else f"{parent.path}\\{sub}"
+        if parent is self.HKEY_CURRENT_USER:
+            path = sub
+        elif parent is self.HKEY_CLASSES_ROOT:
+            path = f"HKCR\\{sub}"
+        else:
+            path = f"{parent.path}\\{sub}"
         if not any(key == path or key.startswith(path + "\\") for key in self.keys):
             raise FileNotFoundError(path)
         return _Key(path)
 
-    def QueryValueEx(self, key: _Key, name: str) -> tuple[str, int]:  # noqa: N802
+    def CreateKeyEx(self, parent, sub: str, reserved: int, access: int) -> _Key:  # noqa: N802
+        assert parent is self.HKEY_CURRENT_USER and access == self.KEY_SET_VALUE
+        return _Key(sub)
+
+    def SetValueEx(self, key: _Key, name: str, reserved: int, kind: int, value: str) -> None:  # noqa: N802
+        self.written.append((key.path, name, kind, value))
+        self.keys.setdefault(key.path, {})[name] = value
+
+    def QueryValueEx(self, key: _Key, name: str) -> tuple[object, int]:  # noqa: N802
         try:
             return self.keys[key.path][name], 1
         except KeyError:
@@ -59,8 +79,10 @@ def windows(monkeypatch: pytest.MonkeyPatch):
     """Pretend to be Windows with the given registry; returns the installer for a FakeWinreg."""
     monkeypatch.setattr(LocalProbe, "is_windows", lambda self: True)
 
-    def install(keys: dict[str, dict[str, str]]) -> None:
-        monkeypatch.setitem(sys.modules, "winreg", FakeWinreg(keys))
+    def install(keys: dict[str, dict[str, object]]) -> FakeWinreg:
+        fake = FakeWinreg(keys)
+        monkeypatch.setitem(sys.modules, "winreg", fake)
+        return fake
 
     return install
 
@@ -251,3 +273,158 @@ def test_display_name_is_none_when_the_call_fails(monkeypatch: pytest.MonkeyPatc
         raising=False,
     )
     assert LocalProbe().display_name() is None
+
+
+# --- Outlook, internet settings, user environment --------------------------------------------------
+
+
+def test_outlook_probes_are_false_or_empty_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(LocalProbe, "is_windows", lambda self: False)
+    local = LocalProbe()
+    assert not local.outlook_installed()
+    assert not local.new_outlook_enabled()
+    assert local.outlook_account_addresses() == []
+
+
+def test_outlook_installed_follows_the_com_registration(windows) -> None:
+    windows({"HKCR\\Outlook.Application": {}})
+    assert LocalProbe().outlook_installed()
+    windows({})
+    assert not LocalProbe().outlook_installed()
+
+
+@pytest.mark.parametrize(("value", "expected"), [(1, True), (0, False), ("1", False), (None, False)])
+def test_new_outlook_enabled_reads_the_use_new_outlook_dword(windows, value: object, expected: bool) -> None:
+    windows({_OUTLOOK_PREFERENCES: {} if value is None else {"UseNewOutlook": value}})
+    assert LocalProbe().new_outlook_enabled() is expected
+
+
+def test_new_outlook_is_off_without_the_registry_key(windows) -> None:
+    windows({})
+    assert not LocalProbe().new_outlook_enabled()
+
+
+def _fake_outlook_accounts(monkeypatch: pytest.MonkeyPatch, smtp_addresses: list[object]) -> list[str]:
+    dispatched: list[str] = []
+    accounts = SimpleNamespace(
+        Count=len(smtp_addresses),
+        Item=lambda index: SimpleNamespace(SmtpAddress=smtp_addresses[index - 1]),
+    )
+
+    def dispatch(prog_id: str):
+        dispatched.append(prog_id)
+        return SimpleNamespace(GetNamespace=lambda name: SimpleNamespace(Accounts=accounts))
+
+    client = SimpleNamespace(Dispatch=dispatch)
+    monkeypatch.setitem(sys.modules, "win32com", SimpleNamespace(client=client))
+    monkeypatch.setitem(sys.modules, "win32com.client", client)
+    return dispatched
+
+
+def test_outlook_account_addresses_are_lower_case_and_unique(
+    monkeypatch: pytest.MonkeyPatch, windows
+) -> None:
+    windows({})
+    dispatched = _fake_outlook_accounts(
+        monkeypatch, ["Alex@Corp.com", "", None, " alex@corp.com ", "alex@private.org"]
+    )
+    assert LocalProbe().outlook_account_addresses() == ["alex@corp.com", "alex@private.org"]
+    assert dispatched == ["Outlook.Application"]
+
+
+def test_outlook_account_addresses_are_empty_when_com_fails(monkeypatch: pytest.MonkeyPatch, windows) -> None:
+    windows({})
+
+    def dispatch(prog_id: str):
+        raise OSError("Outlook is not running")
+
+    client = SimpleNamespace(Dispatch=dispatch)
+    monkeypatch.setitem(sys.modules, "win32com", SimpleNamespace(client=client))
+    monkeypatch.setitem(sys.modules, "win32com.client", client)
+    assert LocalProbe().outlook_account_addresses() == []
+
+
+def test_outlook_account_addresses_are_empty_without_pywin32(
+    monkeypatch: pytest.MonkeyPatch, windows
+) -> None:
+    windows({})
+    monkeypatch.setitem(sys.modules, "win32com", None)
+    monkeypatch.setitem(sys.modules, "win32com.client", None)
+    assert LocalProbe().outlook_account_addresses() == []
+
+
+def test_internet_settings_reads_the_static_proxy_only_when_enabled(
+    monkeypatch: pytest.MonkeyPatch, windows
+) -> None:
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    windows(
+        {
+            _INTERNET_SETTINGS: {
+                "ProxyEnable": 1,
+                "ProxyServer": " proxy.corp:8080 ",
+                "AutoConfigURL": "http://wpad/wpad.dat",
+            }
+        }
+    )
+    assert LocalProbe().internet_settings() == InternetSettings(
+        "proxy.corp:8080", "http://wpad/wpad.dat", None
+    )
+
+    windows({_INTERNET_SETTINGS: {"ProxyEnable": 0, "ProxyServer": "proxy.corp:8080"}})
+    assert LocalProbe().internet_settings() == InternetSettings(None, None, None)
+
+
+def test_internet_settings_survive_a_missing_registry_key(monkeypatch: pytest.MonkeyPatch, windows) -> None:
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    windows({})
+    assert LocalProbe().internet_settings() == InternetSettings(None, None, None)
+
+
+def test_internet_settings_take_the_proxy_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(LocalProbe, "is_windows", lambda self: False)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.setenv("https_proxy", "http://lower:3128")
+    assert LocalProbe().internet_settings() == InternetSettings(None, None, "http://lower:3128")
+    monkeypatch.setenv("HTTPS_PROXY", "http://upper:3128")
+    assert LocalProbe().internet_settings().env_proxy == "http://upper:3128"
+
+
+def test_set_user_env_writes_an_expand_string_and_sets_this_process(
+    monkeypatch: pytest.MonkeyPatch, windows
+) -> None:
+    fake = windows({})
+    monkeypatch.setenv("AI_OIL_PROBE_PROXY", "before")  # makes monkeypatch undo what the probe sets
+    broadcasts: list[tuple] = []
+    monkeypatch.setattr(
+        ctypes,
+        "windll",
+        SimpleNamespace(user32=SimpleNamespace(SendMessageTimeoutW=lambda *args: broadcasts.append(args))),
+        raising=False,
+    )
+
+    LocalProbe().set_user_env("AI_OIL_PROBE_PROXY", "http://proxy.corp:8080")
+
+    assert fake.written == [("Environment", "AI_OIL_PROBE_PROXY", 2, "http://proxy.corp:8080")]
+    assert os.environ["AI_OIL_PROBE_PROXY"] == "http://proxy.corp:8080"
+    assert len(broadcasts) == 1 and broadcasts[0][3] == "Environment"
+
+
+def test_set_user_env_reports_registry_errors(monkeypatch: pytest.MonkeyPatch, windows) -> None:
+    fake = windows({})
+    monkeypatch.setenv("AI_OIL_PROBE_PROXY", "before")
+
+    def refuse(*args):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(fake, "CreateKeyEx", refuse)
+    with pytest.raises(ConfigError, match="cannot store AI_OIL_PROBE_PROXY"):
+        LocalProbe().set_user_env("AI_OIL_PROBE_PROXY", "x")
+    assert os.environ["AI_OIL_PROBE_PROXY"] == "before"
+
+
+def test_set_user_env_is_only_possible_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(LocalProbe, "is_windows", lambda self: False)
+    with pytest.raises(ConfigError, match="only possible on Windows"):
+        LocalProbe().set_user_env("AI_OIL_PROBE_PROXY", "x")
