@@ -22,8 +22,9 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OP-5 | Corporate SSL inspection for Jira / Confluence | Requests fail with certificate errors | Since step I1 the Windows certificate store is used automatically (`truststore`); only if that fails: `oil connector set Jira --setting ca_bundle=C:/path/corp-ca.pem` | open |
 | OP-6 | Atlassian API token and Windows Credential Manager | Tokens must land in Credential Manager | `oil connector add jira … --token`; `oil connector list` shows `credential: stored` | open |
 | OP-7 | OneDrive Files-On-Demand attributes (offline placeholders) | Hydration is reported, not silent | Link a cloud-only file, sync, check the "hydrated" warning | open |
-| OP-8 | Python 3.12, pip and PyPI access on the corporate laptop | No install, no tool | `pip install -e .[dev]`; wheels can be vendored if PyPI is blocked | open |
+| OP-8 | Python 3.12, pip and PyPI access on the corporate laptop | No install, no tool | Run `install.bat`; if PyPI is blocked use the `wheels\` folder (install_windows.md, Offline installation) | open |
 | OP-9 | Performance with real data (NFR-3, SRCH-9) | Measured only with synthetic data | Note the duration lines of `oil sync` and `oil search` after a few weeks | open |
+| OP-54 | `install.bat` / `start.bat` / `update.bat` / `uninstall.bat` have only been checked statically | Batch behaviour on the real Windows shell (quoting, choice, reg query parsing, attrib +P) | First run on the laptop; send the console output if anything looks wrong | open |
 
 ## 2. Known limitations in the phase-1 code
 

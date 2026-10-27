@@ -1,6 +1,6 @@
 # Installer and setup wizard — concept
 
-**Status:** agreed 27 October 2026, to be built as steps I1–I6 of `docs/implementation_plan.md`.
+**Status:** built (steps I1–I6, 27 October 2026); first laptop run open (OP-8).
 **Replaces:** the manual steps of `docs/install_windows.md` (which stays as the reference and troubleshooting guide).
 
 ## 1. Goal

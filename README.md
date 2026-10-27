@@ -8,7 +8,7 @@ Single user, local on a Windows laptop, Python, SQLite.
 
 **Phases 1 and 2 are implemented**: data model, Manual / Outlook / Jira / Confluence / SharePoint connectors, on-demand sync with versioning, full-text search and the OQL query language, CLI, backup — and a Jira-like local web interface (`oil serve`, then http://127.0.0.1:8765/). Phases 3–5 (AI) are not started.
 
-**Installation on Windows:** follow [`docs/install_windows.md`](docs/install_windows.md) — code in your (OneDrive-synced) Documents folder is fine, but the Python environment and the database stay in `%LOCALAPPDATA%\AI_OIL`, and only the daily backups go to OneDrive.
+**Installation on Windows:** double-click `install.bat` (see [`docs/install_windows.md`](docs/install_windows.md)) — code in your (OneDrive-synced) Documents folder is fine, but the Python environment and the database stay in `%LOCALAPPDATA%\AI_OIL`, and only the daily backups go to OneDrive. Start with `start.bat`.
 
 | Document | Content |
 |---|---|

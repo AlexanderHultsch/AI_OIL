@@ -27,6 +27,8 @@ Work order for building AI_OIL against `docs/specification.md` v0.2. Each step i
 
 **Phase 1:** 1,759 tests pass, lint and format are clean, and the phase-1 end-to-end test (`tests/e2e/test_p1.py`) covers the exit criteria with fixture-backed connectors. The real acceptance run on the target laptop (`oil connector check --live`, then a first real `oil sync`) is still open.
 
+**Installer (steps I1–I6):** `install.bat`, `start.bat`, `update.bat` and `uninstall.bat` bootstrap Python and run the `oil setup` wizard; the batch files are only checked statically here (`tests/test_batch_files.py`), their real test is the first run on the laptop (OP-8, OP-54).
+
 Steps 5, 8, 13, 17 and 18 were split into sub-steps during execution (5a–c, 8a–c, 13a–b, 17a–b, 18a–b); step 21b fixed a missing credential store found in a manual run.
 
 ## Web conventions (phase 2, binding)
@@ -84,7 +86,7 @@ Steps 5, 8, 13, 17 and 18 were split into sub-steps during execution (5a–c, 8a
 | I3 | Stages Outlook (classic/new detection, COM) and network (proxy, TLS probe) — done | `pytest tests/setup` |
 | I4 | Stages Jira/Confluence (URL normalisation, token, live lists) and SharePoint (OneDrive registry libraries) — done | `pytest tests/setup` |
 | I5 | Finish stage (live check, first project, summary), re-run behaviour — done | `pytest tests/setup && pytest` |
-| I6 | `install.bat`, `start.bat`, `update.bat`, `uninstall.bat` + static checks; install guide rewritten around them | `pytest tests/test_batch_files.py && pytest && ruff check` |
+| I6 | `install.bat`, `start.bat`, `update.bat`, `uninstall.bat` + static checks; install guide rewritten around them — done | `pytest tests/test_batch_files.py && pytest && ruff check` |
 | 27–31 | P3 AI enrichment | per step |
 | 32–33 | P4 assistant | per step |
 | 34–36 | P5 write-back and dashboards | per step |
