@@ -79,6 +79,12 @@ Steps 5, 8, 13, 17 and 18 were split into sub-steps during execution (5a–c, 8a
 | 26a | Create dialog, connectors page (incl. live check), sync log, people (merge), projects and components, keyboard shortcuts, NFR-3 timing test | `pytest tests/web` |
 | 26b | Browser end-to-end test in Chromium (P2 exit criteria: P1 acceptance repeated without the CLI) | `pytest tests/e2e/test_p2_browser.py && pytest && ruff check` |
 | 26c | Note editing, per-connector sync, backup now, automatic backup after web syncs | `pytest tests/web && pytest -m browser tests/e2e/test_p2_browser.py && pytest` |
+| I1 | `truststore`: AI_OIL trusts the Windows certificate store (config switch, `ca_bundle` still overrides) | `pytest tests/test_truststore.py tests/connectors/test_atlassian.py` |
+| I2 | `oil setup` framework (system probe, stages, `--only`, validation, idempotence) + stages data folder (OneDrive guard, OP-53), me, backup | `pytest tests/setup` |
+| I3 | Stages Outlook (classic/new detection, COM) and network (proxy, TLS probe) | `pytest tests/setup` |
+| I4 | Stages Jira/Confluence (URL normalisation, token, live lists) and SharePoint (OneDrive registry libraries) | `pytest tests/setup` |
+| I5 | Finish stage (live check, first project, summary), re-run behaviour | `pytest tests/setup && pytest` |
+| I6 | `install.bat`, `start.bat`, `update.bat`, `uninstall.bat` + static checks; install guide rewritten around them | `pytest tests/test_batch_files.py && pytest && ruff check` |
 | 27–31 | P3 AI enrichment | per step |
 | 32–33 | P4 assistant | per step |
 | 34–36 | P5 write-back and dashboards | per step |
