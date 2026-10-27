@@ -47,6 +47,8 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OP-25 | Full test suite takes about 70 s (the OQL compiler fixture rebuilds the database per test) | Slower feedback | Module-scoped fixture for the compiler tests | open |
 | OP-26 | SharePoint URLs with `..` segments are normalised but not blocked | Local single-user tool | Reject `..` | accepted |
 | OP-27 | No `CoUninitialize` for Outlook COM threads | None known | Watch during OP-2 | accepted |
+| OP-28 | Starlette warns that `httpx` for its TestClient is deprecated in favour of `httpx2` | Test-only warning | Switch the dev dependency when httpx2 is stable | accepted |
+| OP-29 | Web GET pages run inside `BEGIN IMMEDIATE` and briefly take the write lock | Harmless for one user; a long sync keeps transactions short | Read-only dependency with `engine.connect()` if contention shows | accepted |
 
 ## 3. Decisions needed
 

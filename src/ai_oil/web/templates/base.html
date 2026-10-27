@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}AI_OIL{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body hx-headers='{{ {"X-CSRF-Token": csrf_token}|tojson }}'>
+  <header class="topbar">
+    <a class="brand" href="/">AI_OIL</a>
+    <form class="search" action="/issues" method="get" role="search">
+      <input type="search" name="q" placeholder="Search or OQL…" autocomplete="off">
+    </form>
+  </header>
+  <nav class="sidebar" aria-label="Main">
+    {% set links = [
+      ("issues", "/issues", "Issues"),
+      ("filters", "/filters", "Filters"),
+      ("projects", "/projects", "Projects"),
+      ("connectors", "/connectors", "Connectors"),
+      ("sync", "/sync", "Sync log"),
+      ("people", "/people", "People"),
+    ] %}
+    <ul>
+      {% for name, href, label in links %}
+      <li><a href="{{ href }}"{% if nav_active == name %} class="active" aria-current="page"{% endif %}>{{ label }}</a></li>
+      {% endfor %}
+    </ul>
+  </nav>
+  <main class="content">
+    <div id="flash" role="status" aria-live="polite"></div>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

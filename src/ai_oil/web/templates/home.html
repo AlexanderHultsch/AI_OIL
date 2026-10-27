@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Home — AI_OIL{% endblock %}
+{% block content %}
+<h1>Projects</h1>
+{% if projects %}
+<table>
+  <thead>
+    <tr>
+      <th>Key</th>
+      <th>Name</th>
+      {% for category in categories %}<th class="num">{{ category }}</th>{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for project in projects %}
+    <tr>
+      <td>{{ project.key }}</td>
+      <td>{{ project.name }}</td>
+      {% for category in categories %}<td class="num">{{ project.counts[category] }}</td>{% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No projects yet. Create one with <code>oil project add</code>.</p>
+{% endif %}
+{% endblock %}

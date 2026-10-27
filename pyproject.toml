@@ -18,11 +18,15 @@ dependencies = [
     "pypdf>=4.0",
     "beautifulsoup4>=4.12",
     "extract-msg>=0.48",
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
     "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.5"]
+dev = ["pytest>=8", "ruff>=0.5", "httpx>=0.27"]
 
 [project.scripts]
 oil = "ai_oil.cli.main:main"
@@ -38,7 +42,15 @@ sharepoint = "ai_oil.connectors.sharepoint:SharePointConnector"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ai_oil = ["db/sql/*.sql", "db/migrations/*.py", "db/migrations/*.mako", "db/migrations/versions/*.py"]
+ai_oil = [
+    "db/sql/*.sql",
+    "db/migrations/*.py",
+    "db/migrations/*.mako",
+    "db/migrations/versions/*.py",
+    "web/templates/*.html",
+    "web/templates/**/*.html",
+    "web/static/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
