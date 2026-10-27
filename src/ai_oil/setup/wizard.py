@@ -4,9 +4,22 @@ from ai_oil.errors import AiOilError, ValidationError
 from ai_oil.setup.console import SkipStage
 from ai_oil.setup.model import SetupContext, Stage, StageResult
 from ai_oil.setup.stages_basic import BackupStage, DataStage, MeStage
-from ai_oil.setup.stages_connectors import NetworkStage, OutlookStage
+from ai_oil.setup.stages_connectors import (
+    AtlassianStage,
+    NetworkStage,
+    OutlookStage,
+    SharePointStage,
+)
 
-STAGES: list[Stage] = [DataStage(), MeStage(), BackupStage(), OutlookStage(), NetworkStage()]
+STAGES: list[Stage] = [
+    DataStage(),
+    MeStage(),
+    BackupStage(),
+    OutlookStage(),
+    NetworkStage(),
+    AtlassianStage(),
+    SharePointStage(),
+]
 
 _WELCOME = (
     "Welcome to the AI_OIL setup.",

@@ -116,6 +116,34 @@ def test_missing_secret_is_reported_with_governance_hint() -> None:
     assert session.calls == []
 
 
+def test_an_injected_token_is_used_without_a_credential_ref_or_the_keyring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(ref: str) -> str:
+        raise AssertionError("keyring read although a token was given")
+
+    monkeypatch.setattr("ai_oil.connectors.atlassian.get_secret", fail)
+    client, session = make_client(
+        FakeResponse(payload={"ok": True}), credential_ref=None, token="given-token"
+    )
+
+    assert client.get_json("/rest/x") == {"ok": True}
+    assert session.calls[0]["auth"] == ("me@example.com", "given-token")
+
+
+def test_an_injected_token_wins_over_the_stored_one() -> None:
+    client, session = make_client(FakeResponse(payload={}), token="given-token")
+    client.get_json("/rest/x")
+    assert session.calls[0]["auth"] == ("me@example.com", "given-token")
+
+
+def test_an_injected_token_never_appears_in_errors() -> None:
+    client, _ = make_client(
+        FakeResponse(500, text="echo given-token"), credential_ref=None, token="given-token"
+    )
+    assert "given-token" not in str(error_of(client))
+
+
 def test_missing_credential_ref_is_reported() -> None:
     client, _ = make_client(credential_ref=None)
     message = str(error_of(client))

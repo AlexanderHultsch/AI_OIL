@@ -10,11 +10,12 @@ import pytest
 
 from ai_oil.errors import ConfigError
 from ai_oil.setup import probe as probe_module
-from ai_oil.setup.probe import InternetSettings, LocalProbe, inside_onedrive
+from ai_oil.setup.probe import InternetSettings, LocalProbe, SyncedLibrary, inside_onedrive
 
 _SHELL_FOLDERS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
 _ACCOUNTS = r"Software\Microsoft\OneDrive\Accounts"
 _OUTLOOK_PREFERENCES = r"Software\Microsoft\Office\16.0\Outlook\Preferences"
+_PROVIDERS = r"Software\SyncEngines\Providers\OneDrive"
 _INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 
 
@@ -428,3 +429,48 @@ def test_set_user_env_is_only_possible_on_windows(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(LocalProbe, "is_windows", lambda self: False)
     with pytest.raises(ConfigError, match="only possible on Windows"):
         LocalProbe().set_user_env("AI_OIL_PROBE_PROXY", "x")
+
+
+def test_sharepoint_libraries_are_read_from_every_sync_provider(windows) -> None:
+    windows(
+        {
+            f"{_PROVIDERS}\\Aaa": {
+                "UrlNamespace": "https://acme.sharepoint.com/sites/mb32829/Shared Documents/",
+                "MountPoint": "C:\\Users\\a\\Acme\\MB32829 - Documents",
+                "LibraryType": "teamsite",
+            },
+            f"{_PROVIDERS}\\Bbb": {
+                "UrlNamespace": "https://acme-my.sharepoint.com/personal/alex_acme_com",
+                "MountPoint": "C:\\Users\\a\\OneDrive - Acme",
+            },
+            f"{_PROVIDERS}\\Ccc": {"MountPoint": "C:\\Users\\a\\Nowhere"},
+            f"{_PROVIDERS}\\Ddd": {"UrlNamespace": "https://acme.sharepoint.com/sites/x"},
+            f"{_PROVIDERS}\\Eee": {"UrlNamespace": "  ", "MountPoint": "C:\\x"},
+            f"{_PROVIDERS}\\Fff": {"UrlNamespace": 5, "MountPoint": "C:\\x"},
+        }
+    )
+
+    assert LocalProbe().sharepoint_libraries() == [
+        SyncedLibrary(
+            "MB32829 - Documents",
+            "https://acme.sharepoint.com/sites/mb32829/Shared Documents",
+            "C:\\Users\\a\\Acme\\MB32829 - Documents",
+            "teamsite",
+        ),
+        SyncedLibrary(
+            "OneDrive - Acme",
+            "https://acme-my.sharepoint.com/personal/alex_acme_com",
+            "C:\\Users\\a\\OneDrive - Acme",
+            "",
+        ),
+    ]
+
+
+def test_sharepoint_libraries_without_the_registry_key(windows) -> None:
+    windows({})
+    assert LocalProbe().sharepoint_libraries() == []
+
+
+def test_sharepoint_libraries_are_empty_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(LocalProbe, "is_windows", lambda self: False)
+    assert LocalProbe().sharepoint_libraries() == []

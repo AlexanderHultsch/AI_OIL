@@ -5,7 +5,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Protocol
 
 from ai_oil.errors import ConfigError
@@ -13,6 +13,7 @@ from ai_oil.errors import ConfigError
 _USER_SHELL_FOLDERS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
 _ONEDRIVE_ACCOUNTS = r"Software\Microsoft\OneDrive\Accounts"
 _ONEDRIVE_ENV = ("OneDrive", "OneDriveCommercial", "OneDriveConsumer")
+_SYNC_PROVIDERS = r"Software\SyncEngines\Providers\OneDrive"
 _NAME_DISPLAY = 3
 _OUTLOOK_PROGID = "Outlook.Application"
 _OUTLOOK_PREFERENCES = r"Software\Microsoft\Office\16.0\Outlook\Preferences"
@@ -31,6 +32,16 @@ class InternetSettings:
     proxy_server: str | None = None
     auto_config_url: str | None = None
     env_proxy: str | None = None
+
+
+@dataclass(frozen=True)
+class SyncedLibrary:
+    """A library the OneDrive client syncs: its web address, its local folder and its `LibraryType`."""
+
+    name: str
+    url: str
+    path: str
+    kind: str
 
 
 class SystemProbe(Protocol):
@@ -65,6 +76,10 @@ class SystemProbe(Protocol):
         ...
 
     def internet_settings(self) -> InternetSettings: ...
+
+    def sharepoint_libraries(self) -> list[SyncedLibrary]:
+        """Every library OneDrive syncs for the user, as the sync client registered it; empty off Windows."""
+        ...
 
     def set_user_env(self, name: str, value: str) -> None:
         """Store an environment variable for the Windows user (and this process); ConfigError elsewhere."""
@@ -213,6 +228,46 @@ class LocalProbe:
             auto_config_url=auto_config_url,
             env_proxy=self.env("HTTPS_PROXY") or self.env("https_proxy"),
         )
+
+    def sharepoint_libraries(self) -> list[SyncedLibrary]:
+        if not self.is_windows():
+            return []
+        import winreg
+
+        found: list[SyncedLibrary] = []
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _SYNC_PROVIDERS) as providers:
+                index = 0
+                while True:
+                    try:
+                        name = winreg.EnumKey(providers, index)
+                    except OSError:
+                        break
+                    index += 1
+                    try:
+                        with winreg.OpenKey(providers, name) as provider:
+                            url, _ = winreg.QueryValueEx(provider, "UrlNamespace")
+                            mount, _ = winreg.QueryValueEx(provider, "MountPoint")
+                            try:
+                                kind, _ = winreg.QueryValueEx(provider, "LibraryType")
+                            except OSError:
+                                kind = ""
+                    except OSError:
+                        continue
+                    url, mount = _text(url), _text(mount)
+                    if url is None or mount is None:
+                        continue
+                    found.append(
+                        SyncedLibrary(
+                            name=PureWindowsPath(mount).name or mount,
+                            url=url.rstrip("/"),
+                            path=mount,
+                            kind=kind.strip() if isinstance(kind, str) else "",
+                        )
+                    )
+        except OSError:
+            return []
+        return found
 
     def set_user_env(self, name: str, value: str) -> None:
         if not self.is_windows():

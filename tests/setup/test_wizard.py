@@ -51,13 +51,15 @@ def ctx(make_ctx, fresh_home: Path) -> SetupContext:
     return make_ctx(fresh_home)
 
 
-def test_the_real_stages_are_data_me_backup_outlook_network() -> None:
+def test_the_real_stages_in_their_order() -> None:
     assert [(s.name, s.title) for s in wizard.STAGES] == [
         ("data", "Data folder"),
         ("me", "About you"),
         ("backup", "Backups"),
         ("outlook", "Outlook"),
         ("network", "Network"),
+        ("atlassian", "Jira and Confluence"),
+        ("sharepoint", "SharePoint and OneDrive files"),
     ]
 
 

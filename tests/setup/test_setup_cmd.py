@@ -30,6 +30,8 @@ def test_list_prints_name_and_title_per_stage(capsys: pytest.CaptureFixture[str]
         "backup  Backups",
         "outlook  Outlook",
         "network  Network",
+        "atlassian  Jira and Confluence",
+        "sharepoint  SharePoint and OneDrive files",
     ]
 
 
@@ -52,7 +54,9 @@ def test_only_with_an_unknown_stage_is_an_error(
 ) -> None:
     scripted([])
     assert main(["--home", str(initialised_home), "setup", "--only", "nope"]) == 1
-    expected = "error: unknown stage 'nope'; stages: data, me, backup, outlook, network"
+    expected = (
+        "error: unknown stage 'nope'; stages: data, me, backup, outlook, network, atlassian, sharepoint"
+    )
     assert expected in capsys.readouterr().err
 
 
@@ -76,7 +80,7 @@ def test_a_failing_stage_gives_exit_code_1(scripted, fresh_home: Path) -> None:
 def test_the_full_wizard_on_a_fresh_folder(
     scripted, probe, fresh_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(wizard, "STAGES", wizard.STAGES[:3])  # Outlook and the network are tested apart
+    monkeypatch.setattr(wizard, "STAGES", wizard.STAGES[:3])  # the stages that reach out are tested apart
     probe.name = "Alex"
     probe.upn = "alex@corp.com"
     target = tmp_path / "backups"

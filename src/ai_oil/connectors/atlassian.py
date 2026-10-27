@@ -55,7 +55,8 @@ class AtlassianClient:
 
     Without an injected session, an explicit `ca_bundle` wins; otherwise the operating-system certificate
     store is trusted unless `use_system_certificates` is off, which leaves the bundled certifi roots (CON-5).
-    The API token is looked up on the first request, kept in memory only and never put into a message (GOV-8).
+    The API token is the injected `token` or, without one, is looked up through `credential_ref` on the first
+    request; it is kept in memory only and never put into a message (GOV-8).
     """
 
     def __init__(
@@ -64,6 +65,7 @@ class AtlassianClient:
         email: str,
         credential_ref: str | None,
         *,
+        token: str | None = None,
         ca_bundle: str | None = None,
         use_system_certificates: bool = True,
         timeout: float = 30.0,
@@ -79,7 +81,7 @@ class AtlassianClient:
         self._session = session if session is not None else _new_session(ca_bundle, use_system_certificates)
         self._sleep = sleep
         self._max_retries = max_retries
-        self._token: str | None = None
+        self._token = token or None
 
     def __repr__(self) -> str:
         return f"AtlassianClient({self._base_url!r})"

@@ -10,7 +10,7 @@ import pytest
 
 from ai_oil.setup.console import Console
 from ai_oil.setup.model import SetupContext
-from ai_oil.setup.probe import InternetSettings
+from ai_oil.setup.probe import InternetSettings, SyncedLibrary
 
 
 class ScriptedConsole(Console):
@@ -56,6 +56,7 @@ class FakeProbe:
     new_outlook_script: list[bool] = field(default_factory=list)
     accounts: list[str] = field(default_factory=list)
     internet: InternetSettings = field(default_factory=InternetSettings)
+    libraries: list[SyncedLibrary] = field(default_factory=list)
     user_env: dict[str, str] = field(default_factory=dict)
 
     def env(self, name: str) -> str | None:
@@ -87,6 +88,9 @@ class FakeProbe:
 
     def internet_settings(self) -> InternetSettings:
         return self.internet
+
+    def sharepoint_libraries(self) -> list[SyncedLibrary]:
+        return list(self.libraries)
 
     def set_user_env(self, name: str, value: str) -> None:
         self.user_env[name] = value
