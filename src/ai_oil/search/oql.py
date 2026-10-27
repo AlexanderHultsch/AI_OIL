@@ -10,6 +10,7 @@ _KEYWORDS = frozenset({"AND", "OR", "NOT", "IN", "IS", "EMPTY", "ORDER", "BY", "
 _NOT_A_VALUE = frozenset({"AND", "OR", "NOT", "ORDER"})
 _WORD_CHARS = frozenset(string.ascii_letters + string.digits + "_.@:/-")
 _RELATIVE = re.compile(r"[+-][0-9]+[dwm]", re.IGNORECASE)
+MAX_DEPTH = 64
 _TWO_CHAR_OPS = frozenset({"!=", ">=", "<=", "!~"})
 _ONE_CHAR_OPS = frozenset("=<>~")
 
@@ -150,6 +151,7 @@ class _Parser:
     def __init__(self, query: str) -> None:
         self._tokens = _tokenize(query)
         self._index = 0
+        self._depth = 0
 
     def _peek(self, offset: int = 0) -> _Token:
         return self._tokens[min(self._index + offset, len(self._tokens) - 1)]
@@ -229,14 +231,24 @@ class _Parser:
                 flat.append(item)
         return kind(tuple(flat))
 
+    def _enter(self) -> None:
+        self._depth += 1
+        if self._depth > MAX_DEPTH:
+            raise self._fail("query nested too deeply", self._peek())
+
     def _not_expr(self) -> Expr:
         if self._is_keyword("NOT"):
+            self._enter()
             self._advance()
-            return Not(self._not_expr())
+            negated = Not(self._not_expr())
+            self._depth -= 1
+            return negated
         if self._peek().kind == "lparen":
+            self._enter()
             self._advance()
             expr = self._or_expr()
             self._expect_rparen()
+            self._depth -= 1
             return expr
         return self._clause()
 

@@ -36,6 +36,7 @@ ai_oil = ["db/sql/*.sql", "db/migrations/*.py", "db/migrations/*.mako", "db/migr
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --import-mode=importlib"
+markers = ["performance: SRCH-9 timing tests (large dataset)"]
 
 [tool.ruff]
 line-length = 110

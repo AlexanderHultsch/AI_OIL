@@ -4,6 +4,7 @@ import pytest
 
 from ai_oil.errors import ValidationError
 from ai_oil.search.oql import (
+    MAX_DEPTH,
     And,
     Clause,
     Not,
@@ -427,3 +428,29 @@ def test_format_error_for_an_error_built_by_hand():
     exc = OqlSyntaxError("boom", 2)
     assert (exc.detail, exc.position, str(exc)) == ("boom", 2, "boom at position 2")
     assert format_error("abcd", exc) == "error: boom at position 2\nabcd\n  ^"
+
+
+def test_nesting_up_to_the_limit_parses():
+    query = "(" * MAX_DEPTH + "a = 1" + ")" * MAX_DEPTH
+    assert where(query) == c("a", "=", w("1"))
+    assert where("NOT " * MAX_DEPTH + "a = 1") is not None
+
+
+def test_nesting_beyond_the_limit_is_a_syntax_error():
+    query = "(" * (MAX_DEPTH + 1) + "a = 1" + ")" * (MAX_DEPTH + 1)
+    with pytest.raises(OqlSyntaxError) as info:
+        parse(query)
+    assert (info.value.detail, info.value.position) == ("query nested too deeply", MAX_DEPTH)
+
+
+def test_deeply_nested_parentheses_do_not_exhaust_the_stack():
+    with pytest.raises(OqlSyntaxError) as info:
+        parse("(" * 5000)
+    assert info.value.detail == "query nested too deeply"
+
+
+def test_chained_not_beyond_the_limit_is_a_syntax_error():
+    query = "NOT " * (MAX_DEPTH + 1) + "a = 1"
+    with pytest.raises(OqlSyntaxError) as info:
+        parse(query)
+    assert (info.value.detail, info.value.position) == ("query nested too deeply", 4 * MAX_DEPTH)
