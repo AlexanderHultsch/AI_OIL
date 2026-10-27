@@ -5,10 +5,22 @@ import sys
 from pathlib import Path
 
 from ai_oil import __version__
+from ai_oil.cli import comment as comment_command
 from ai_oil.cli import init as init_command
+from ai_oil.cli import issue as issue_command
+from ai_oil.cli import issue_link as issue_link_command
+from ai_oil.cli import person as person_command
+from ai_oil.cli import project as project_command
 from ai_oil.errors import AiOilError
 
-COMMAND_MODULES: list = [init_command]
+COMMAND_MODULES: list = [
+    init_command,
+    project_command,
+    issue_command,
+    comment_command,
+    issue_link_command,
+    person_command,
+]
 
 
 def build_parser() -> argparse.ArgumentParser:
