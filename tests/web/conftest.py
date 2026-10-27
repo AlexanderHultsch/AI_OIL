@@ -1,5 +1,6 @@
+import dataclasses
 import shutil
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import date
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from starlette.templating import Jinja2Templates
 
-from ai_oil.config import load_config
+from ai_oil.config import BackupConfig, load_config
 from ai_oil.db.engine import create_db_engine
 from ai_oil.domain import issues, people, projects
 from ai_oil.sources import linking, store
@@ -74,6 +75,16 @@ def client(app: FastAPI) -> Iterator[TestClient]:
 @pytest.fixture
 def csrf_token(app: FastAPI) -> str:
     return app.state.csrf.token
+
+
+@pytest.fixture
+def set_backup_folder() -> Callable[[FastAPI, Path], None]:
+    """Point the backup folder of an app's configuration (NFR-8) at a folder."""
+
+    def configure(app: FastAPI, folder: Path) -> None:
+        app.state.config = dataclasses.replace(app.state.config, backup=BackupConfig(folder=folder))
+
+    return configure
 
 
 def _seed_nav(path: Path) -> None:

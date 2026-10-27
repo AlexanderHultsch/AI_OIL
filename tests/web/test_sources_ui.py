@@ -1,6 +1,7 @@
 import re
 from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -8,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from ai_oil import timeutil
+from ai_oil import backup, timeutil
 from ai_oil.connectors.outlook import OutlookConnector
 from ai_oil.connectors.outlook_session import MailAddress, MailRecord
 from ai_oil.domain import people
@@ -483,6 +484,100 @@ def test_refresh_all_syncs_every_source_of_the_issue_and_reports_failures(
         "SELECT source_object_id FROM sync_result WHERE sync_run_id = (SELECT MAX(id) FROM sync_run)",
     )
     assert sorted(r[0] for r in results) == sorted([good, bad])
+
+
+def summary_of(fragment: str) -> str:
+    match = re.search(r'<div class="sync-summary.*?</div>', fragment, re.DOTALL)
+    assert match is not None
+    return plain(match.group(0))
+
+
+def test_a_refresh_mentions_a_backup_that_was_due(
+    detail_app: FastAPI,
+    add_connector,
+    post,
+    set_backup_folder,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    add_connector()
+    source = link_fake(post)
+    folder = tmp_path / "bk"
+    set_backup_folder(detail_app, folder)
+    monkeypatch.setattr(timeutil, "_now", lambda: datetime(2026, 10, 26, 9, 15, tzinfo=UTC))
+
+    response = post(f"/issues/OIL-2/sources/{source}/refresh")
+
+    written = folder / "ai_oil-20261026-091500.db"
+    assert written.is_file()
+    assert response.status_code == 200
+    assert f'<p class="sync-backup">Backup written: {written}</p>' in response.text
+    assert summary_of(response.text).endswith(f"Backup written: {written}")
+
+    again = post("/issues/OIL-2/sources/refresh")
+
+    assert "Backup written" not in again.text
+    assert len(list(folder.glob(backup.BACKUP_PATTERN))) == 1
+
+
+def test_refresh_all_mentions_a_backup_that_was_due(
+    detail_app: FastAPI,
+    add_connector,
+    post,
+    set_backup_folder,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    add_connector()
+    link_fake(post)
+    folder = tmp_path / "bk"
+    set_backup_folder(detail_app, folder)
+    monkeypatch.setattr(timeutil, "_now", lambda: datetime(2026, 10, 26, 9, 15, tzinfo=UTC))
+
+    response = post("/issues/OIL-2/sources/refresh")
+
+    assert f"Backup written: {folder / 'ai_oil-20261026-091500.db'}" in summary_of(response.text)
+
+
+def test_a_failing_automatic_backup_is_a_line_of_the_summary_and_the_refresh_still_works(
+    detail_app: FastAPI,
+    add_connector,
+    post,
+    set_backup_folder,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    add_connector()
+    source = link_fake(post)
+    set_backup_folder(detail_app, tmp_path / "bk")
+
+    def explode(*args: object, **kwargs: object) -> Path:
+        raise RuntimeError("disk full <b>")
+
+    monkeypatch.setattr(backup, "create_backup", explode)
+
+    response = post(f"/issues/OIL-2/sources/{source}/refresh")
+
+    assert response.status_code == 200
+    assert response.text.startswith('<section class="panel" id="sources-panel">')
+    assert '<p class="sync-backup">Automatic backup failed: disk full &lt;b&gt;</p>' in response.text
+    assert "Backup written" not in response.text
+    assert "1 checked" in summary_of(response.text)
+    assert [tuple(r) for r in rows(detail_app, "SELECT scope, status FROM sync_run ORDER BY id")][-1] == (
+        f"source:{source}",
+        "ok",
+    )
+
+
+def test_a_refresh_without_a_backup_folder_has_no_backup_line(
+    detail_app: FastAPI, add_connector, post
+) -> None:
+    add_connector()
+    source = link_fake(post)
+
+    response = post(f"/issues/OIL-2/sources/{source}/refresh")
+
+    assert "sync-backup" not in response.text
 
 
 def test_refreshing_a_source_that_is_not_linked_to_the_issue_is_a_404(

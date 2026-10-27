@@ -1,15 +1,19 @@
 import json
 import re
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import ClassVar
+from urllib.parse import quote
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from ai_oil import timeutil
+from ai_oil import backup, timeutil
 from ai_oil.domain import people
+from ai_oil.governance import audit
 from ai_oil.sources import linking, registry, store
 from ai_oil.sources.model import ConnectorConfig, FetchResult, ObjectMeta, ObjectState, VersionData
 
@@ -38,6 +42,13 @@ def fakefetch_registered(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     registry.register_connector_type(FakeFetcher)
     yield
     registry.unregister_connector_type("fakefetch")
+
+
+T0 = datetime(2026, 10, 26, 9, 15, 0, tzinfo=UTC)
+
+
+def freeze(monkeypatch: pytest.MonkeyPatch, moment: datetime) -> None:
+    monkeypatch.setattr(timeutil, "_now", lambda: moment)
 
 
 @pytest.fixture
@@ -345,3 +356,145 @@ def test_sync_all_now_needs_the_csrf_token(app: FastAPI, post) -> None:
 
 def test_sync_all_is_a_post_only_endpoint(client: TestClient) -> None:
     assert client.get("/sync/all").status_code == 405
+
+
+# --- Backup now --------------------------------------------------------------------------------------------
+
+
+def test_the_page_has_the_backup_button(client: TestClient) -> None:
+    page = client.get("/sync").text
+
+    assert 'action="/sync/backup"' in page
+    assert ">Backup now</button>" in page
+    assert "Backup written" not in page
+
+
+def test_backup_now_writes_a_backup_and_the_log_shows_its_path(
+    app: FastAPI, client: TestClient, post, set_backup_folder, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    folder = tmp_path / "bk"
+    set_backup_folder(app, folder)
+    freeze(monkeypatch, T0)
+
+    response = post("/sync/backup")
+
+    written = folder / "ai_oil-20261026-091500.db"
+    assert written.is_file()
+    assert (response.status_code, response.headers["location"]) == (
+        303,
+        f"/sync?backup={quote(str(written), safe='')}",
+    )
+    page = client.get(response.headers["location"]).text
+    assert f"Backup written: {written}" in plain(page)
+    assert "Backup written" not in client.get("/sync").text
+    with app.state.engine.begin() as conn:
+        [entry] = audit.list_entries(conn, action_prefix="backup.create")
+    assert entry.target == str(written)
+
+
+def test_backup_now_ignores_the_age_of_the_last_backup(
+    app: FastAPI, post, set_backup_folder, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    folder = tmp_path / "bk"
+    set_backup_folder(app, folder)
+    freeze(monkeypatch, T0)
+    post("/sync/backup")
+    freeze(monkeypatch, T0 + timedelta(minutes=1))
+
+    post("/sync/backup")
+
+    assert backups_in(folder) == ["ai_oil-20261026-091500.db", "ai_oil-20261026-091600.db"]
+
+
+def test_backup_now_without_a_folder_is_a_422_error_page(app: FastAPI, post) -> None:
+    response = post("/sync/backup")
+
+    assert response.status_code == 422
+    assert "no backup folder configured" in response.text
+
+
+def test_backup_now_needs_the_csrf_token_and_is_post_only(app: FastAPI, client: TestClient, post) -> None:
+    assert post("/sync/backup", csrf=False).status_code == 403
+    assert client.get("/sync/backup").status_code == 405
+
+
+def test_the_backup_parameters_are_escaped(client: TestClient) -> None:
+    page = client.get("/sync?backup=<b>x</b>&backup_error=<i>y</i>").text
+
+    assert "Backup written: &lt;b&gt;x&lt;/b&gt;" in page
+    assert "Automatic backup failed: &lt;i&gt;y&lt;/i&gt;" in page
+    assert "<b>x</b>" not in page and "<i>y</i>" not in page
+
+
+# --- the automatic backup after "Sync all now" -------------------------------------------------------------
+
+
+def backups_in(folder: Path) -> list[str]:
+    return sorted(path.name for path in folder.glob(backup.BACKUP_PATTERN))
+
+
+def test_sync_all_now_writes_a_backup_when_due_and_says_so(
+    app: FastAPI, client: TestClient, post, set_backup_folder, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    folder = tmp_path / "bk"
+    set_backup_folder(app, folder)
+    freeze(monkeypatch, T0)
+
+    response = post("/sync/all")
+
+    written = folder / "ai_oil-20261026-091500.db"
+    assert backups_in(folder) == [written.name]
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/sync?backup={quote(str(written), safe='')}"
+    assert f"Backup written: {written}" in plain(client.get(response.headers["location"]).text)
+
+
+def test_a_recent_backup_is_not_repeated_after_the_next_sync(
+    app: FastAPI, client: TestClient, post, set_backup_folder, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    folder = tmp_path / "bk"
+    set_backup_folder(app, folder)
+    freeze(monkeypatch, T0)
+    post("/sync/all")
+    freeze(monkeypatch, T0 + timedelta(hours=1))
+
+    response = post("/sync/all")
+
+    assert (response.status_code, response.headers["location"]) == (303, "/sync")
+    assert backups_in(folder) == ["ai_oil-20261026-091500.db"]
+    assert "Backup written" not in client.get("/sync").text
+
+    freeze(monkeypatch, T0 + timedelta(hours=25))
+    response = post("/sync/all")
+
+    assert "ai_oil-20261027-101500.db" in response.headers["location"]
+    assert len(backups_in(folder)) == 2
+
+
+def test_a_failing_automatic_backup_is_shown_and_the_sync_is_still_recorded(
+    app: FastAPI, client: TestClient, post, set_backup_folder, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    set_backup_folder(app, tmp_path / "bk")
+
+    def explode(*args: object, **kwargs: object) -> Path:
+        raise RuntimeError("disk full & <b>")
+
+    monkeypatch.setattr(backup, "create_backup", explode)
+    add_object(app, "Jira main", "HWDEV-1", display_ref="HWDEV-1", link=True)
+
+    response = post("/sync/all")
+
+    assert response.status_code == 303
+    [run] = rows(app, "SELECT id, trigger, scope, status FROM sync_run")
+    assert tuple(run)[1:] == ("ui", "all", "ok")
+    page = client.get(response.headers["location"]).text
+    assert "Automatic backup failed: disk full &amp; &lt;b&gt;" in page
+    assert "Backup written" not in page
+    assert run_ids(page) == [run[0]]
+
+
+def test_sync_all_now_without_a_backup_folder_mentions_no_backup(client: TestClient, post) -> None:
+    response = post("/sync/all")
+
+    assert response.headers["location"] == "/sync"
+    assert "backup failed" not in client.get("/sync").text

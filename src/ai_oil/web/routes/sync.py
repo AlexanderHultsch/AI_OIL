@@ -3,12 +3,14 @@
 import json
 from dataclasses import dataclass
 from typing import Annotated
+from urllib.parse import quote, urlencode
 
 import sqlalchemy
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import bindparam, text
 from starlette.responses import RedirectResponse, Response
 
+from ai_oil import backup
 from ai_oil.config import Config
 from ai_oil.sources.sync import SyncScope, run_sync
 from ai_oil.web.deps import db_read, get_config, get_engine
@@ -19,6 +21,8 @@ router = APIRouter()
 
 PAGE = "/sync"
 MAX_RUNS = 50
+BACKUP_WRITTEN = "Backup written: "
+BACKUP_FAILED = "Automatic backup failed: "
 
 
 @dataclass(frozen=True)
@@ -118,8 +122,37 @@ def sync_log(
     request: Request,
     conn: Annotated[sqlalchemy.Connection, Depends(db_read)],
     run: Annotated[int | None, Query()] = None,
+    backup_path: Annotated[str | None, Query(alias="backup")] = None,
+    backup_error: Annotated[str | None, Query()] = None,
 ):
-    return render(request, "sync/list.html", {"runs": _runs(conn), "open_run": run, "nav_active": "sync"})
+    context = {
+        "runs": _runs(conn),
+        "open_run": run,
+        "backup_written": f"{BACKUP_WRITTEN}{backup_path}" if backup_path else None,
+        "backup_failed": f"{BACKUP_FAILED}{backup_error}" if backup_error else None,
+        "nav_active": "sync",
+    }
+    return render(request, "sync/list.html", context)
+
+
+def auto_backup(engine: sqlalchemy.Engine, config: Config) -> tuple[str | None, str | None]:
+    """The automatic backup after a web-triggered sync (NFR-8): (written path, failure message).
+
+    A failing backup is no error of the request; the caller shows the message next to the sync result.
+    """
+    try:
+        written = backup.maybe_auto_backup(engine, config)
+    except Exception as exc:
+        return None, str(exc)
+    return (str(written) if written is not None else None), None
+
+
+def sync_redirect(engine: sqlalchemy.Engine, config: Config, run_id: int | None = None) -> Response:
+    """Run the automatic backup, then redirect to the log (opened at the run) showing the backup result."""
+    written, failed = auto_backup(engine, config)
+    params = {"run": run_id, "backup": written, "backup_error": failed}
+    query = urlencode({name: value for name, value in params.items() if value is not None}, quote_via=quote)
+    return RedirectResponse(f"{PAGE}?{query}" if query else PAGE, status_code=303)
 
 
 @router.post(PAGE + "/all")
@@ -129,4 +162,14 @@ def sync_all(
 ) -> Response:
     """Sync every open issue's sources; the fetch runs outside any request transaction (SYNC-1)."""
     run_sync(engine, SyncScope("all"), config=config, trigger="ui")
-    return RedirectResponse(PAGE, status_code=303)
+    return sync_redirect(engine, config)
+
+
+@router.post(PAGE + "/backup")
+def backup_now(
+    engine: Annotated[sqlalchemy.Engine, Depends(get_engine)],
+    config: Annotated[Config, Depends(get_config)],
+) -> Response:
+    """Write a backup now, whatever the age of the last one (NFR-8)."""
+    written = backup.create_backup(engine, config)
+    return RedirectResponse(f"{PAGE}?{urlencode({'backup': written}, quote_via=quote)}", status_code=303)

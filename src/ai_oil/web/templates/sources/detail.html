@@ -26,6 +26,17 @@
   <p class="placeholder">No version stored.</p>
   {%- endif %}
 
+  {% if source.object_type == "note" -%}
+  <h2>Edit note</h2>
+  <form class="note-edit" action="/sources/{{ source.id }}/note" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p><label>Title <input type="text" name="title" value="{{ source.title or "" }}" required></label></p>
+    <p><label>Text <textarea name="text" rows="8" required>
+{{ note_text }}</textarea></label></p>
+    <button type="submit">Save note</button>
+  </form>
+  {%- endif %}
+
   <h2>Versions</h2>
   {% if versions -%}
   <table class="versions">

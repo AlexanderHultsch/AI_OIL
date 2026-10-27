@@ -6,7 +6,7 @@ Single user, local on a Windows laptop, Python, SQLite.
 
 ## Status
 
-**Phase 1 (data foundation) is implemented**: data model, Manual / Outlook / Jira / Confluence / SharePoint connectors, on-demand sync with versioning, full-text search and the OQL query language, CLI, backup. Phases 2–5 are not started.
+**Phases 1 and 2 are implemented**: data model, Manual / Outlook / Jira / Confluence / SharePoint connectors, on-demand sync with versioning, full-text search and the OQL query language, CLI, backup — and a Jira-like local web interface (`oil serve`, then http://127.0.0.1:8765/). Phases 3–5 (AI) are not started.
 
 Quick start (Windows, Python 3.12, classic Outlook):
 
@@ -21,6 +21,7 @@ oil issue create -p OIL -s "Clarify inductor lead time" -d "Supplier quoted 26 w
 oil link OIL-1 --outlook-selected
 oil sync --all
 oil search 'text ~ "lead time" AND statusCategory != Done'
+oil serve
 ```
 
 | Document | Content |

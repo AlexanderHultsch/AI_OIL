@@ -53,6 +53,8 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OP-36 | Descriptions and comments are Markdown by spec (DM-19, UI-20) but are shown as plain text with line breaks | No formatting in the web UI | Add a Markdown renderer (e.g. markdown-it-py, sanitised) | open |
 | OP-37 | Web UI error messages reuse CLI wording ("choose one with --connector", "add one with `oil connector add outlook`") | Slightly confusing in the browser | Give the link service messages without CLI syntax; let the CLI add its hints | open |
 | OP-38 | Without a credential store (no keyring backend) the /connectors page shows an error page instead of the connectors with credential state "unknown" | Only on machines without a keyring; Windows has Credential Manager | Catch ConfigError per connector and show it on the card | open |
+| OP-51 | `/sync?backup=…` and `?backup_error=…` render the text carried in the URL (escaped) | A crafted local link can show a misleading banner on the sync page | Pass a short-lived message id instead of the text | accepted |
+| OP-52 | A note created through the issue page's "New note" form keeps the browser's CRLF line endings (editing normalises them) | A later identical save creates one extra version | Normalise line endings on creation too | open |
 
 ## 3. Decisions needed
 
@@ -69,7 +71,7 @@ Everything here was built and tested against recorded fixtures and simulated sys
 
 | ID | Phase | Item | Status |
 |---|---|---|---|
-| OP-40 | P2 | Web interface (spec chapter 10) — see `docs/implementation_plan.md` steps 22–26 | in progress (26b left) |
+| OP-40 | P2 | Web interface (spec chapter 10) — steps 22–26c | closed (27 October 2026) |
 | OP-41 | P3 | OpenCode adapter contract on the target machine: does a headless `opencode run` hang without `--auto`? (as in Professional-Assistant OC-6) | open |
 | OP-42 | P3 | Model per task type and attestation of the company-internal model for program content | open |
 | OP-43 | P3 | Token budget per run (AI-20) and the fixed OpenCode overhead of about 8,000 input tokens per call | open |

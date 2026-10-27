@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Version** | 0.3 — phase 1 implemented |
+| **Version** | 0.4 — phases 1 and 2 implemented |
 | **Date** | 27 October 2026 |
 | **Owner** | Alex Hultsch |
 | **Basis** | Requirements interview of 26 October 2026 (Appendix A); implementation decisions of 27 October 2026 (Appendix C) |
@@ -1010,3 +1010,6 @@ Classes C–E do not exist before P5.
 | 8 | Write transactions | Every transaction starts with `BEGIN IMMEDIATE`, so concurrent writers wait instead of failing |
 | 9 | Versions | Only content decides (DM-48): volatile fields such as Jira `updated` or the Confluence version number are kept out of the content hash |
 | 10 | Connector isolation | A connector that cannot start is skipped when references are matched (CON-3); naming it with `--connector` reports why |
+| 11 | Web security | The web server binds to 127.0.0.1 only, rejects foreign Host headers (DNS rebinding) and requires a per-process CSRF token on every state-changing request |
+| 12 | Web scope | Everything the CLI does is available in the browser except `oil init`, `oil connector add/set` (token entry) and `oil restore`, which stay CLI-only (OP-39) |
+| 13 | Browser test | A real-Chromium end-to-end test lives behind the optional `[browser]` extra (`pytest -m browser`) |

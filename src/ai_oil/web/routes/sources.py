@@ -5,17 +5,20 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import sqlalchemy
-from fastapi import APIRouter, Depends, Request
-from starlette.responses import Response
+from fastapi import APIRouter, Depends, Form, Request
+from starlette.responses import RedirectResponse, Response
 
+from ai_oil.connectors import manual
 from ai_oil.errors import ValidationError
+from ai_oil.governance import audit
 from ai_oil.sources import activity, linking, registry, store
-from ai_oil.web.deps import db_read
+from ai_oil.web.deps import db_read, db_write
 from ai_oil.web.rendering import render
 from ai_oil.web.routes.issues import _local_time
 
 router = APIRouter()
 
+VIA = "web"
 MAX_TEXT_LINES = 400
 DIFF_WRAP_COLUMN = 100
 DIFF_CONTEXT_LINES = 3
@@ -148,6 +151,7 @@ def source_page(
             if latest is not None
             else None
         ),
+        "note_text": latest.text if obj.object_type == "note" and latest is not None else "",
         "compare_a": versions[-2].version_no if len(versions) > 1 else None,
         "compare_b": latest.version_no if latest is not None else None,
         "entries": [
@@ -191,3 +195,26 @@ def source_diff(
         )
     context = {"source": _view(obj), "a": first.version_no, "b": second.version_no, "table": table}
     return render(request, "sources/diff.html", context)
+
+
+@router.post("/sources/{source_id}/note")
+def edit_note(
+    source_id: int,
+    conn: Annotated[sqlalchemy.Connection, Depends(db_write)],
+    title: Annotated[str, Form()] = "",
+    text: Annotated[str, Form()] = "",
+) -> Response:
+    """Store an edited note as a new version, like `oil note edit` (CON-10)."""
+    before = store.get_object(conn, source_id).title
+    version_id = manual.edit_note(conn, source_id, text.replace("\r\n", "\n"), title=title)
+    obj = store.get_object(conn, source_id)
+    changed = version_id is not None or obj.title != before
+    audit.log(
+        conn,
+        "note.edit",
+        "B",
+        actor_type="user",
+        target=linking.source_label(obj),
+        detail={"source_object_id": obj.id, "version_id": version_id, "changed": changed, "via": VIA},
+    )
+    return RedirectResponse(f"/sources/{source_id}", status_code=303)

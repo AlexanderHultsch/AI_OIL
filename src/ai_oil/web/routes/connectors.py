@@ -9,11 +9,14 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from starlette.responses import RedirectResponse, Response
 
+from ai_oil.config import Config
 from ai_oil.governance import audit
 from ai_oil.sources import health, registry
-from ai_oil.web.deps import db_read, db_write, get_engine
+from ai_oil.sources.sync import SyncScope, run_sync
+from ai_oil.web.deps import db_read, db_write, get_config, get_engine
 from ai_oil.web.rendering import render
 from ai_oil.web.routes.issues import _local_time
+from ai_oil.web.routes.sync import sync_redirect
 
 router = APIRouter()
 
@@ -142,3 +145,14 @@ def enable(connector_id: int, conn: Annotated[sqlalchemy.Connection, Depends(db_
 @router.post(PAGE + "/{connector_id}/disable")
 def disable(connector_id: int, conn: Annotated[sqlalchemy.Connection, Depends(db_write)]) -> Response:
     return _set_enabled(conn, connector_id, False)
+
+
+@router.post(PAGE + "/{connector_id}/sync")
+def sync_now(
+    connector_id: int,
+    engine: Annotated[sqlalchemy.Engine, Depends(get_engine)],
+    config: Annotated[Config, Depends(get_config)],
+) -> Response:
+    """Sync every linked source of one connector; the fetch runs outside any request transaction (SYNC-1)."""
+    report = run_sync(engine, SyncScope("connector", connector_id), config=config, trigger="ui")
+    return sync_redirect(engine, config, report.run_id)

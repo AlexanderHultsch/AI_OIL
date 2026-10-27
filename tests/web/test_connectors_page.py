@@ -1,6 +1,9 @@
 import re
 from collections.abc import Iterator
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import ClassVar
+from urllib.parse import quote
 
 import pytest
 from fastapi import FastAPI
@@ -427,3 +430,79 @@ def test_the_page_forms_carry_the_csrf_token(client: TestClient, add_connector, 
     card = card_of(client.get("/connectors").text, connector_id)
 
     assert f'<input type="hidden" name="csrf_token" value="{csrf_token}">' in card
+
+
+# --- Sync now ----------------------------------------------------------------------------------------------
+
+
+def test_sync_now_is_offered_only_for_enabled_connectors(client: TestClient, add_connector, post) -> None:
+    enabled = add_connector("Jira main")
+    disabled = add_connector("Jira old")
+    post(f"/connectors/{disabled}/disable")
+
+    page = client.get("/connectors").text
+
+    assert f'action="/connectors/{enabled}/sync"' in card_of(page, enabled)
+    assert ">Sync now</button>" in card_of(page, enabled)
+    assert "Sync now" not in card_of(page, disabled)
+    assert f"/connectors/{disabled}/sync" not in page
+
+
+def test_sync_now_runs_a_sync_of_the_connector_and_redirects_to_its_run(
+    app: FastAPI, client: TestClient, add_connector, post
+) -> None:
+    connector_id = add_connector("Jira main")
+    other_id = add_connector("Jira other")
+    seed_object(app, connector_id, "HWDEV-1")
+
+    response = post(f"/connectors/{connector_id}/sync")
+
+    with app.state.engine.begin() as conn:
+        [run] = conn.execute(text("SELECT id, trigger, scope, status FROM sync_run")).all()
+    assert (run[1], run[2]) == ("ui", f"connector:{connector_id}")
+    assert (response.status_code, response.headers["location"]) == (303, f"/sync?run={run[0]}")
+    page = client.get(response.headers["location"]).text
+    assert f"<td>connector:{connector_id}</td>" in page
+    assert "<details open>" in page
+    assert other_id != connector_id
+
+
+def test_sync_now_writes_the_automatic_backup_when_due(
+    app: FastAPI,
+    client: TestClient,
+    add_connector,
+    post,
+    set_backup_folder,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "bk"
+    set_backup_folder(app, folder)
+    monkeypatch.setattr(timeutil, "_now", lambda: datetime(2026, 10, 26, 9, 15, tzinfo=UTC))
+    connector_id = add_connector("Jira main")
+
+    response = post(f"/connectors/{connector_id}/sync")
+
+    written = folder / "ai_oil-20261026-091500.db"
+    [run_id] = [r[0] for r in rows_of(app, "SELECT id FROM sync_run")]
+    assert response.headers["location"] == f"/sync?run={run_id}&backup={quote(str(written), safe='')}"
+    assert f"Backup written: {written}" in plain(client.get(response.headers["location"]).text)
+
+    response = post(f"/connectors/{connector_id}/sync")
+
+    assert re.fullmatch(r"/sync\?run=\d+", response.headers["location"])
+
+
+def test_sync_now_of_an_unknown_connector_is_a_404_and_needs_the_csrf_token(
+    app: FastAPI, add_connector, post
+) -> None:
+    connector_id = add_connector("Jira main")
+
+    assert post("/connectors/999/sync").status_code == 404
+    assert post(f"/connectors/{connector_id}/sync", csrf=False).status_code == 403
+    assert rows_of(app, "SELECT id FROM sync_run") == []
+
+
+def rows_of(app: FastAPI, sql: str):
+    with app.state.engine.begin() as conn:
+        return conn.execute(text(sql)).all()

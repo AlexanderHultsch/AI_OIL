@@ -17,6 +17,7 @@ from ai_oil.sources.sync import SyncReport, SyncScope, format_report, run_sync
 from ai_oil.web.deps import db_write, get_config, get_engine
 from ai_oil.web.rendering import render
 from ai_oil.web.routes.issues import _local_time
+from ai_oil.web.routes.sync import BACKUP_FAILED, BACKUP_WRITTEN, auto_backup
 
 router = APIRouter()
 
@@ -117,15 +118,31 @@ def _groups(links: list[LinkedSource]) -> list[SourceGroup]:
     return groups
 
 
-def _summary(report: SyncReport | None) -> dict[str, object] | None:
+def _summary(report: SyncReport | None, backup_line: str | None = None) -> dict[str, object] | None:
     if report is None:
         return None
     first, *rest = format_report(report).splitlines()
-    return {"status": report.status, "head": first, "lines": [line.strip() for line in rest]}
+    return {
+        "status": report.status,
+        "head": first,
+        "lines": [line.strip() for line in rest],
+        "backup": backup_line,
+    }
+
+
+def _backup_line(engine: sqlalchemy.Engine, config: Config) -> str | None:
+    """The automatic backup after a sync (NFR-8) as one line for the summary; None if none was due."""
+    written, failed = auto_backup(engine, config)
+    if failed is not None:
+        return f"{BACKUP_FAILED}{failed}"
+    return f"{BACKUP_WRITTEN}{written}" if written is not None else None
 
 
 def sources_context(
-    conn: sqlalchemy.Connection, issue: issues.Issue, report: SyncReport | None = None
+    conn: sqlalchemy.Connection,
+    issue: issues.Issue,
+    report: SyncReport | None = None,
+    backup_line: str | None = None,
 ) -> dict[str, object]:
     """The context of `issue/_sources.html`; a sync report is shown as a summary above the list."""
     return {
@@ -133,16 +150,22 @@ def sources_context(
         "source_groups": _groups(linking.list_issue_sources(conn, issue.key)),
         "roles": linking.ROLES,
         "default_role": DEFAULT_ROLE,
-        "sync_summary": _summary(report),
+        "sync_summary": _summary(report, backup_line),
     }
 
 
 def _panel(
-    request: Request, engine: sqlalchemy.Engine, key: str, report: SyncReport | None = None
+    request: Request,
+    engine: sqlalchemy.Engine,
+    key: str,
+    report: SyncReport | None = None,
+    backup_line: str | None = None,
 ) -> Response:
     with engine.begin() as conn:
         return render(
-            request, "issue/_sources.html", sources_context(conn, issues.get_issue(conn, key), report)
+            request,
+            "issue/_sources.html",
+            sources_context(conn, issues.get_issue(conn, key), report, backup_line),
         )
 
 
@@ -169,7 +192,7 @@ def refresh_all(
     """Sync every active link of the issue; the fetch runs outside any request transaction (SYNC-1)."""
     issue = _issue(engine, key)
     report = run_sync(engine, SyncScope("issue", issue.key), config=config, trigger="ui")
-    return _panel(request, engine, issue.key, report)
+    return _panel(request, engine, issue.key, report, _backup_line(engine, config))
 
 
 @router.post("/issues/{key}/sources/{source_id}/refresh")
@@ -183,7 +206,7 @@ def refresh_one(
     """Sync one linked source (SYNC-1)."""
     issue = _issue(engine, key, source_id)
     report = run_sync(engine, SyncScope("source", source_id), config=config, trigger="ui")
-    return _panel(request, engine, issue.key, report)
+    return _panel(request, engine, issue.key, report, _backup_line(engine, config))
 
 
 @router.post("/issues/{key}/sources/{source_id}/unlink")

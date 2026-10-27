@@ -4,7 +4,6 @@ The data folder, the project, the people, the issues, the links, the syncs and e
 browser. Only what the web interface does not offer is prepared through `main([...])`: `oil init` and the
 four `oil connector add` calls. Outlook, Jira and Confluence have no real backend here, so their plugins are
 registered in-process with fake sessions (as in test_p1.py); SharePoint reads real files below a sync root.
-The one change with no web form yet, the edit of a note's text, goes through the domain service.
 """
 
 import copy
@@ -33,15 +32,13 @@ from playwright.sync_api import Locator, Page, expect, sync_playwright  # noqa: 
 
 from ai_oil.cli.main import main  # noqa: E402
 from ai_oil.config import load_config  # noqa: E402
-from ai_oil.connectors import manual  # noqa: E402
 from ai_oil.connectors.atlassian import AtlassianClient  # noqa: E402
 from ai_oil.connectors.confluence import ConfluenceConnector  # noqa: E402
 from ai_oil.connectors.jira import JiraConnector  # noqa: E402
 from ai_oil.connectors.outlook import OutlookConnector  # noqa: E402
 from ai_oil.connectors.outlook_session import MailAddress, MailRecord  # noqa: E402
 from ai_oil.db.engine import create_db_engine  # noqa: E402
-from ai_oil.governance import audit  # noqa: E402
-from ai_oil.sources import linking, registry, store  # noqa: E402
+from ai_oil.sources import registry  # noqa: E402
 from ai_oil.sources.model import ConnectorConfig  # noqa: E402
 from ai_oil.web.app import create_app  # noqa: E402
 
@@ -584,18 +581,10 @@ def test_phase_2_exit_criteria(page: Page, site: Site) -> None:
     stat = spec.stat()
     spec.write_text("The flange torque limit is 12 Nm. Spindle runout is checked.", encoding="utf-8")
     os.utime(spec, (stat.st_atime + 60, stat.st_mtime + 60))
-    # The web interface has no form to edit a note yet, so the edit goes through the domain service.
-    with site.engine.begin() as conn:
-        version_id = manual.edit_note(conn, note_id, "Tantalum allocation confirmed.")
-        obj = store.get_object(conn, note_id)
-        audit.log(
-            conn,
-            "note.edit",
-            "B",
-            actor_type="user",
-            target=linking.source_label(obj),
-            detail={"source_object_id": obj.id, "version_id": version_id, "changed": True},
-        )
+    page.goto(f"{url}/sources/{note_id}")
+    page.locator("form.note-edit textarea[name='text']").fill("Tantalum allocation confirmed.")
+    page.locator("form.note-edit").get_by_role("button", name="Save note").click()
+    expect(page.locator("pre.source-text")).to_have_text("Tantalum allocation confirmed.")
 
     cells = sync_all(page, site)
     expect(cells).to_have_text(

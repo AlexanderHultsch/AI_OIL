@@ -7,6 +7,17 @@
   <button type="submit" class="primary">Sync all now</button>
   <span class="muted">Fetches every linked source of the open issues and waits until the run is finished.</span>
 </form>
+<form class="inline-form" action="/sync/backup" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Backup now</button>
+  <span class="muted">Writes a consistent copy of the database to the configured backup folder.</span>
+</form>
+{% if backup_written -%}
+<div class="sync-summary sync-ok" role="status"><p>{{ backup_written }}</p></div>
+{%- endif %}
+{% if backup_failed -%}
+<div class="sync-summary sync-failed" role="alert"><p>{{ backup_failed }}</p></div>
+{%- endif %}
 {% if runs %}
 <table class="sync-runs">
   <thead>

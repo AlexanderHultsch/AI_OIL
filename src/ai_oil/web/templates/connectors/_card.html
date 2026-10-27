@@ -25,6 +25,10 @@
   <div class="card-actions">
     {% if card.enabled -%}
     <button type="button" hx-post="/connectors/{{ card.id }}/check" hx-target="#connector-{{ card.id }}" hx-swap="outerHTML">Live check</button>
+    <form action="/connectors/{{ card.id }}/sync" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Sync now</button>
+    </form>
     <form action="/connectors/{{ card.id }}/disable" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit">Disable</button>

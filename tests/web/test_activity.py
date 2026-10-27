@@ -516,7 +516,7 @@ def test_the_latest_version_is_cut_after_400_lines(detail_app: FastAPI, detail_c
     assert len(lines) == 401
     assert lines[399] == "row 400"
     assert lines[400] == "… (50 more lines)"
-    assert "row 401" not in page
+    assert "row 401" not in shown.group(1)
 
 
 def test_an_unknown_source_is_a_404_page(detail_client: TestClient) -> None:

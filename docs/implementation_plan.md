@@ -21,7 +21,9 @@ Work order for building AI_OIL against `docs/specification.md` v0.2. Each step i
 
 ## Status (27 October 2026)
 
-**Phase 1 is complete; phase 2 is in progress.** Open points of all phases are collected in `docs/open_points.md`.
+**Phases 1 and 2 are complete.** Open points of all phases are collected in `docs/open_points.md`.
+
+**Phase 2:** the local web interface (`oil serve`) covers every P1 operation except the deliberately CLI-only `oil init`, `oil connector add/set` and `oil restore` (OP-39). 2,652 tests pass in about 80 s (step 25c made the suite twice as fast); a real-Chromium test (`pytest -m browser`, needs the `[browser]` extra) repeats the P1 acceptance through the browser. NFR-3 measured: issue list with 500 rows about 110 ms, busy issue page about 10 ms (limit 300 ms). Steps 23, 24, 25 and 26 were split into sub-steps (23a–b, 24a–b, 25a–c, 26a1, 26a2, 26b, 26c).
 
 **Phase 1:** 1,759 tests pass, lint and format are clean, and the phase-1 end-to-end test (`tests/e2e/test_p1.py`) covers the exit criteria with fixture-backed connectors. The real acceptance run on the target laptop (`oil connector check --live`, then a first real `oil sync`) is still open.
 
@@ -76,6 +78,7 @@ Steps 5, 8, 13, 17 and 18 were split into sub-steps during execution (5a–c, 8a
 | 25b | Activity timeline (comments, history, source entries, new versions), expandable items, version diff view | `pytest tests/web/test_activity.py` |
 | 26a | Create dialog, connectors page (incl. live check), sync log, people (merge), projects and components, keyboard shortcuts, NFR-3 timing test | `pytest tests/web` |
 | 26b | Browser end-to-end test in Chromium (P2 exit criteria: P1 acceptance repeated without the CLI) | `pytest tests/e2e/test_p2_browser.py && pytest && ruff check` |
+| 26c | Note editing, per-connector sync, backup now, automatic backup after web syncs | `pytest tests/web && pytest -m browser tests/e2e/test_p2_browser.py && pytest` |
 | 27–31 | P3 AI enrichment | per step |
 | 32–33 | P4 assistant | per step |
 | 34–36 | P5 write-back and dashboards | per step |
