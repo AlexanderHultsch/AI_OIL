@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from ai_oil import __version__
+from ai_oil.cli import backup as backup_command
 from ai_oil.cli import comment as comment_command
 from ai_oil.cli import init as init_command
 from ai_oil.cli import issue as issue_command
@@ -24,6 +25,7 @@ COMMAND_MODULES: list = [
     person_command,
     search_command,
     source_command,
+    backup_command,
 ]
 
 

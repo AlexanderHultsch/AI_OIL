@@ -1,7 +1,13 @@
 """`oil link`, `oil unlink`, `oil sync`, `oil note edit`: sources of an issue (DM-54 .. DM-59, SYNC-1)."""
 
 import argparse
+import difflib
+import sys
 
+import sqlalchemy
+from sqlalchemy import text
+
+from ai_oil.backup import maybe_auto_backup
 from ai_oil.cli.common import transaction
 from ai_oil.cli.context import open_context
 from ai_oil.connectors import manual
@@ -36,6 +42,17 @@ def register(subparsers) -> None:
     sync.add_argument("--include-done", action="store_true", help="with --all: also finished issues")
     sync.set_defaults(func=run_sync_command)
 
+    source = subparsers.add_parser("source", help="inspect stored sources")
+    source_sub = source.add_subparsers(dest="source_command", required=True)
+    show = source_sub.add_parser("show", help="show a source object with its stored content")
+    show.add_argument("source_id", metavar="ID", type=int, help="source object id")
+    show.add_argument("--versions", action="store_true", help="list all stored versions")
+    show.add_argument("--entries", action="store_true", help="list the entries (latest revisions)")
+    show.add_argument(
+        "--diff", nargs=2, type=int, default=None, metavar=("V1", "V2"), help="diff two version numbers"
+    )
+    show.set_defaults(func=run_source_show)
+
     note = subparsers.add_parser("note", help="edit notes")
     sub = note.add_subparsers(dest="note_command", required=True)
     edit = sub.add_parser("edit", help="store new text for a note as a new version")
@@ -65,7 +82,9 @@ def _link_note(args: argparse.Namespace) -> int:
 
 
 def _choose(
-    matches: list[tuple[registry.ConnectorRow, object]], reference: str
+    matches: list[tuple[registry.ConnectorRow, object]],
+    reference: str,
+    skipped: list[tuple[str, str]] | None = None,
 ) -> tuple[registry.ConnectorRow, object]:
     """Matches of real connectors win over the manual connector's; several of them are ambiguous."""
     specific = [match for match in matches if match[0].type != manual.ManualConnector.type]
@@ -78,7 +97,8 @@ def _choose(
         return specific[0]
     if matches:
         return matches[0]
-    raise ValidationError(f"no connector recognises '{reference}'")
+    note = f" (skipped: {'; '.join(f'{name}: {error}' for name, error in skipped)})" if skipped else ""
+    raise ValidationError(f"no connector recognises '{reference}'{note}")
 
 
 def _link_reference(args: argparse.Namespace) -> int:
@@ -88,13 +108,19 @@ def _link_reference(args: argparse.Namespace) -> int:
             me = people.get_me(conn)
             manual.ensure_manual_connector(conn)
             only = registry.get_connector(conn, args.connector).id if args.connector is not None else None
-            instances = [
-                (row, registry.instantiate(row))
-                for row in registry.list_connectors(conn)
-                if row.enabled and (only is None or row.id == only)
-            ]
+            instances = []
+            skipped: list[tuple[str, str]] = []
+            for candidate in registry.list_connectors(conn):
+                if not candidate.enabled or (only is not None and candidate.id != only):
+                    continue
+                try:
+                    instances.append((candidate, registry.instantiate(candidate)))
+                except Exception as exc:
+                    skipped.append((candidate.name, f"{type(exc).__name__}: {exc}"))
+            if only is not None and skipped:
+                raise ValidationError(f"connector {skipped[0][0]} is not usable: {skipped[0][1]}")
             matches = registry.match_reference(instances, args.reference)
-            row, ref = _choose(matches, args.reference)
+            row, ref = _choose(matches, args.reference, skipped)
             connector = next(instance for candidate, instance in instances if candidate.id == row.id)
             meta = connector.resolve(ref)  # type: ignore[attr-defined]
             object_id = store.upsert_object(conn, row.id, meta)
@@ -162,9 +188,16 @@ def run_sync_command(args: argparse.Namespace) -> int:
     ctx = open_context(args)
     try:
         report = run_sync(ctx.engine, scope, config=ctx.config, trigger="cli", include_done=args.include_done)
+        print(format_report(report))
+        try:
+            backup_path = maybe_auto_backup(ctx.engine, ctx.config)
+        except Exception as exc:
+            print(f"warning: automatic backup failed: {exc}", file=sys.stderr)
+        else:
+            if backup_path is not None:
+                print(f"Backup written: {backup_path}")
     finally:
         ctx.engine.dispose()
-    print(format_report(report))
     return 1 if report.status == "failed" else 0
 
 
@@ -183,4 +216,97 @@ def run_note_edit(args: argparse.Namespace) -> int:
             detail={"source_object_id": obj.id, "version_id": version_id, "changed": changed},
         )
     print(f"Updated note #{args.source_id}" if changed else f"Note #{args.source_id} unchanged")
+    return 0
+
+
+_TEXT_LINE_LIMIT = 40
+_ENTRY_PREVIEW_CHARS = 100
+
+
+def _version_by_number(
+    versions: list[store.SourceVersion], source_id: int, number: int
+) -> store.SourceVersion:
+    for version in versions:
+        if version.version_no == number:
+            return version
+    raise ValidationError(f"source object {source_id} has no version {number}")
+
+
+def _author_name(conn: sqlalchemy.Connection, identity_id: int | None) -> str:
+    if identity_id is None:
+        return "-"
+    name = conn.execute(
+        text(
+            "SELECT p.display_name FROM person_identity i JOIN person p ON p.id = i.person_id"
+            " WHERE i.id = :id"
+        ),
+        {"id": identity_id},
+    ).scalar_one_or_none()
+    return name or "-"
+
+
+def run_source_show(args: argparse.Namespace) -> int:
+    with transaction(args) as conn:
+        obj = store.get_object(conn, args.source_id)
+        connector = registry.get_connector(conn, obj.connector_id)
+        versions = store.list_versions(conn, obj.id)
+        entries = store.list_entries(conn, obj.id)
+        issue_keys = linking.issues_for_source(conn, obj.id)
+        lines = [f"#{obj.id} {obj.object_type} {obj.display_ref or obj.title or obj.external_id}"]
+        if obj.title is not None:
+            lines.append(f"Title: {obj.title}")
+        lines.append(f"Connector: {connector.name} ({connector.type})")
+        if obj.locator is not None:
+            lines.append(f"Locator: {obj.locator}")
+        lines.append(
+            f"Status: {obj.fetch_status}, checked {obj.last_checked_at or 'never'},"
+            f" changed {obj.last_changed_at or 'never'}"
+        )
+        if obj.fetch_error:
+            lines.append(f"Error: {obj.fetch_error}")
+        if obj.parent_id is not None:
+            parent = store.get_object(conn, obj.parent_id)
+            lines.append(f"Part of: #{parent.id} {linking.source_label(parent)}")
+        lines.append(f"Linked to: {', '.join(issue_keys) if issue_keys else '-'}")
+        children = store.list_children(conn, obj.id)
+        lines.append(f"Versions: {len(versions)} | Entries: {len(entries)} | Children: {len(children)}")
+
+        if versions:
+            latest = versions[-1]
+            body = latest.text.splitlines()
+            lines += ["", f"Latest version (v{latest.version_no}, fetched {latest.fetched_at}):"]
+            lines += [f"  {line}".rstrip() for line in body[:_TEXT_LINE_LIMIT]]
+            if len(body) > _TEXT_LINE_LIMIT:
+                lines.append(f"  … ({len(body) - _TEXT_LINE_LIMIT} more lines)")
+
+        if args.versions:
+            lines += ["", "Versions:"]
+            lines += [
+                f"  v{v.version_no}  {v.fetched_at}  {v.source_version_ref or '-'}  {v.content_hash[:12]}"
+                for v in versions
+            ]
+
+        if args.entries:
+            lines += ["", "Entries:"]
+            for entry in entries:
+                preview = (entry.new_text or entry.text or "").splitlines()
+                first = preview[0][:_ENTRY_PREVIEW_CHARS] if preview else ""
+                lines.append(
+                    f"  {entry.occurred_at}  {entry.entry_type}  {entry.direction or '-'}"
+                    f"  {_author_name(conn, entry.author_identity_id)}  {first}".rstrip()
+                )
+
+        if args.diff is not None:
+            first_no, second_no = args.diff
+            first_version = _version_by_number(versions, obj.id, first_no)
+            second_version = _version_by_number(versions, obj.id, second_no)
+            lines += ["", f"Diff v{first_no} → v{second_no}:"]
+            lines += difflib.unified_diff(
+                first_version.text.splitlines(),
+                second_version.text.splitlines(),
+                fromfile=f"v{first_no}",
+                tofile=f"v{second_no}",
+                lineterm="",
+            )
+    print("\n".join(lines))
     return 0

@@ -517,3 +517,84 @@ def test_edited_note_is_found_by_the_new_text(oil, capsys, note) -> None:
     _, found, _ = run(oil, capsys, "search", 'text ~ "capacitor"')
 
     assert "OIL-1" in found
+
+
+# --- oil link: a connector that cannot start is isolated (CON-3) -----------------------------------------
+
+
+class BrokenConnector:
+    """A connector type whose constructor fails, as a missing backend or a bad setting would."""
+
+    type: ClassVar[str] = "broken"
+    object_types: ClassVar[frozenset[str]] = frozenset({"jira_issue"})
+    action_class: ClassVar[str] = "A"
+    max_parallel: ClassVar[int] = 1
+
+    def __init__(self, config: ConnectorConfig, **backends: object) -> None:
+        raise RuntimeError("cannot start")
+
+
+@pytest.fixture
+def add_broken_connector(home):
+    registry.register_connector_type(BrokenConnector)
+
+    def add(name: str = "Broken") -> int:
+        engine = create_db_engine(load_config(home).db_path)
+        try:
+            with engine.begin() as conn:
+                return registry.create_connector(conn, "broken", name).id
+        finally:
+            engine.dispose()
+
+    yield add
+    registry.unregister_connector_type("broken")
+
+
+def test_link_url_still_works_when_another_connector_cannot_start(
+    oil, db, capsys, issue, add_broken_connector
+) -> None:
+    add_broken_connector()
+
+    code, out, _ = run(oil, capsys, "link", issue, "https://example.com/a")
+
+    assert code == 0
+    assert out.startswith("Linked web_link: example.com/a to OIL-1\n")
+    assert len(rows(db, "SELECT id FROM source_object")) == 1
+
+
+def test_link_with_a_connector_that_cannot_start_is_rejected(
+    oil, db, capsys, issue, add_broken_connector
+) -> None:
+    add_broken_connector()
+
+    code, _, err = run(oil, capsys, "link", issue, "FAKE-1", "--connector", "Broken")
+
+    assert code == 1
+    assert "connector Broken is not usable: RuntimeError: cannot start" in err
+    assert rows(db, "SELECT id FROM source_object") == []
+
+
+def test_link_without_match_names_the_skipped_connector(
+    oil, capsys, issue, add_connector, add_broken_connector
+) -> None:
+    add_connector()
+    add_broken_connector()
+
+    code, _, err = run(oil, capsys, "link", issue, "no idea what this is")
+
+    assert code == 1
+    assert (
+        "no connector recognises 'no idea what this is' (skipped: Broken: RuntimeError: cannot start)" in err
+    )
+
+
+def test_link_by_another_connector_works_when_one_cannot_start(
+    oil, capsys, issue, add_connector, add_broken_connector
+) -> None:
+    add_connector()
+    add_broken_connector()
+
+    code, out, _ = run(oil, capsys, "link", issue, "FAKE-5")
+
+    assert code == 0
+    assert out.splitlines()[0] == "Linked jira_issue: FAKE-5 to OIL-1"
