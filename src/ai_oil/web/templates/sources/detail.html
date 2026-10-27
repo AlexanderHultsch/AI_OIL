@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Source #{{ source.id }} — AI_OIL{% endblock %}
+{% block content %}
+<div class="source-page">
+  <h1>#{{ source.id }} {{ source.object_type }} {{ source.label }}</h1>
+  <dl class="source-facts">
+    {% if source.title %}<dt>Title</dt><dd>{{ source.title }}</dd>{% endif %}
+    <dt>Connector</dt><dd>{{ connector.name }} ({{ connector.type }})</dd>
+    {% if source.locator %}
+    <dt>Locator</dt>
+    <dd>{% if source.open_url %}<a class="source-open" href="{{ source.open_url }}" target="_blank" rel="noopener">Open in source</a>{% else %}<code>{{ source.locator }}</code>{% endif %}</dd>
+    {% endif %}
+    <dt>Status</dt><dd>{{ source.status }}, checked {{ source.checked }}, changed {{ source.changed }}</dd>
+    {% if source.error %}<dt>Error</dt><dd class="fetch-error">{{ source.error }}</dd>{% endif %}
+    {% if parent %}<dt>Part of</dt><dd><a href="/sources/{{ parent.id }}">#{{ parent.id }} {{ parent.label }}</a></dd>{% endif %}
+    <dt>Linked to</dt>
+    <dd>{% for key in issue_keys %}<a href="/issues/{{ key }}">{{ key }}</a>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</dd>
+    <dt>Counts</dt><dd>{{ versions|length }} versions · {{ entries|length }} entries · {{ children|length }} children</dd>
+  </dl>
+
+  <h2>Latest version</h2>
+  {% if latest -%}
+  <p class="muted">v{{ latest.number }}, fetched {{ latest.fetched }}</p>
+  <pre class="source-text text">{{ latest.text }}</pre>
+  {%- else -%}
+  <p class="placeholder">No version stored.</p>
+  {%- endif %}
+
+  <h2>Versions</h2>
+  {% if versions -%}
+  <table class="versions">
+    <thead><tr><th>Version</th><th>Fetched</th><th>Source version</th><th>Hash</th></tr></thead>
+    <tbody>
+      {% for version in versions %}
+      <tr><td>v{{ version.number }}</td><td>{{ version.fetched }}</td><td>{{ version.ref }}</td><td><code>{{ version.hash }}</code></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if versions|length > 1 -%}
+  <form class="version-compare" method="get" action="/sources/{{ source.id }}/diff">
+    <label>Compare
+      <select name="a" aria-label="From version">
+        {% for version in versions %}<option value="{{ version.number }}"{% if version.number == compare_a %} selected{% endif %}>v{{ version.number }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>with
+      <select name="b" aria-label="To version">
+        {% for version in versions %}<option value="{{ version.number }}"{% if version.number == compare_b %} selected{% endif %}>v{{ version.number }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">Compare</button>
+  </form>
+  {%- endif %}
+  {%- else -%}
+  <p class="placeholder">No versions stored.</p>
+  {%- endif %}
+
+  <h2>Entries</h2>
+  {% if entries -%}
+  <ul class="entry-list">
+    {% for entry in entries %}
+    <li>
+      <details class="timeline-item">
+        <summary>
+          <span class="timeline-time muted">{{ entry.time }}</span>
+          <span class="badge">{{ entry.entry_type }}</span>
+          {% if entry.direction %}<span class="badge">{{ entry.direction }}</span>{% endif %}
+          <span class="timeline-title">{{ entry.author }}</span>
+        </summary>
+        <div class="timeline-detail"><div class="entry-text text">{{ entry.text }}</div></div>
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+  {%- else -%}
+  <p class="placeholder">No entries stored.</p>
+  {%- endif %}
+
+  <h2>Attachments / children</h2>
+  {% if children -%}
+  <ul class="child-list">
+    {% for child in children %}
+    <li><a href="/sources/{{ child.id }}">#{{ child.id }} {{ child.label }}</a> <span class="muted">{{ child.object_type }} · {{ child.status }}</span></li>
+    {% endfor %}
+  </ul>
+  {%- else -%}
+  <p class="placeholder">None.</p>
+  {%- endif %}
+</div>
+{% endblock %}

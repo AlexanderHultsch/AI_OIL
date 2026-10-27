@@ -223,3 +223,31 @@ h3.source-group { margin: 12px 0 4px; font-size: 13px; }
 .candidate-list li { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
 .candidate-list form { margin: 0; }
 .candidate { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.timeline-item { margin: 0 0 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; }
+.timeline-item > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 4px 10px; cursor: pointer; }
+.timeline-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.timeline-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.timeline-detail { padding: 4px 10px 8px; border-top: 1px solid var(--border); }
+.timeline-detail p { margin: 4px 0; overflow-wrap: anywhere; }
+.timeline-links { display: flex; gap: 12px; }
+.timeline-limit { margin: 8px 0 0; }
+
+.source-page h1 { overflow-wrap: anywhere; }
+.source-facts { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 2px 8px; margin: 0 0 16px; }
+.source-facts dt { color: var(--muted); }
+.source-facts dd { margin: 0; overflow-wrap: anywhere; }
+.source-page h2 { margin: 20px 0 6px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.source-text { margin: 0; padding: 8px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 3px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+.version-compare { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 0; }
+.entry-list, .child-list { list-style: none; margin: 0; padding: 0; }
+.child-list li { padding: 4px 0; border-bottom: 1px solid var(--border); }
+
+table.diff { width: 100%; table-layout: fixed; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; border: 1px solid var(--border); }
+table.diff td, table.diff th { padding: 1px 6px; border-bottom: 0; white-space: pre-wrap; overflow-wrap: anywhere; vertical-align: top; }
+table.diff .diff_header { width: 3em; color: var(--muted); background: var(--panel); text-align: right; }
+table.diff th.diff_header { width: auto; text-align: left; font-weight: 600; }
+table.diff .diff_next { width: 1.5em; background: var(--panel); }
+table.diff .diff_add { background: #e3fcef; }
+table.diff .diff_chg { background: #fffae6; }
+table.diff .diff_sub { background: #ffebe6; }

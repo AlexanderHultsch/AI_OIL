@@ -63,7 +63,7 @@ class IssueRow:
 
 
 def _local_time(value: str) -> str:
-    return timeutil.parse_iso(value).astimezone().strftime("%Y-%m-%d %H:%M")
+    return timeutil.local_display(value)
 
 
 def _chunks(ids: list[int]) -> list[list[int]]:

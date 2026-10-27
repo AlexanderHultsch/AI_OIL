@@ -548,23 +548,29 @@ def add_comment(app: FastAPI, key: str, body: str, *, author: str = "Alex") -> c
         return comments.add_comment(conn, key, body, author_id=author_id)
 
 
-def test_the_page_has_the_activity_tabs_with_comments_selected(detail_client: TestClient) -> None:
+def test_the_page_has_the_four_activity_tabs_with_all_selected(detail_client: TestClient) -> None:
     page = detail_client.get("/issues/OIL-4").text
     panel = re.search(r'<section class="panel" id="activity-panel">(.*?)</section>', page, re.DOTALL)
     assert panel is not None
 
     tabs = re.findall(r"<button [^>]*role=\"tab\"[^>]*>(.*?)</button>", panel.group(1), re.DOTALL)
-    assert tabs == ["Comments", "History"]
-    comments_tab = re.search(r"<button [^>]*>Comments</button>", panel.group(1))
-    history_tab = re.search(r"<button [^>]*>History</button>", panel.group(1))
-    assert comments_tab is not None and history_tab is not None
-    assert 'aria-selected="true"' in comments_tab.group(0)
-    assert 'aria-selected="false"' in history_tab.group(0)
-    for tab, button in (("comments", comments_tab), ("history", history_tab)):
-        assert f'hx-get="/issues/OIL-4/activity/{tab}"' in button.group(0)
+    assert tabs == ["All", "Comments", "History", "Source updates"]
+    buttons = {
+        name: re.search(rf"<button [^>]*>{name}</button>", panel.group(1))
+        for name in ("All", "Comments", "History", "Source updates")
+    }
+    for name, slug in (
+        ("All", "all"),
+        ("Comments", "comments"),
+        ("History", "history"),
+        ("Source updates", "source-updates"),
+    ):
+        button = buttons[name]
+        assert button is not None
+        assert f'aria-selected="{"true" if name == "All" else "false"}"' in button.group(0)
+        assert f'hx-get="/issues/OIL-4/activity/{slug}"' in button.group(0)
         assert 'hx-target="#activity-content"' in button.group(0)
-    assert re.search(r'<div id="activity-content"[^>]*>.*?class="comments"', panel.group(1), re.DOTALL)
-    assert "No comments" in panel.group(1)
+    assert re.search(r'<div id="activity-content"[^>]*>.*?class="timeline"', panel.group(1), re.DOTALL)
     assert '<section class="panel" id="sources-panel">' in page
 
 
@@ -627,9 +633,9 @@ def test_the_page_shows_the_comments_of_this_issue_only(
     add_comment(detail_app, "OIL-4", "mine")
     add_comment(detail_app, "OIL-5", "somebody else's")
 
-    page = detail_client.get("/issues/OIL-4").text
+    fragment = detail_client.get("/issues/OIL-4/activity/comments").text
 
-    assert [a["body"] for a in comment_articles(page)] == ["mine"]
+    assert [a["body"] for a in comment_articles(fragment)] == ["mine"]
 
 
 def test_a_blank_comment_is_a_422_and_changes_nothing(detail_app: FastAPI, post) -> None:

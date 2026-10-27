@@ -14,11 +14,13 @@
     <section class="panel" id="activity-panel">
       <h2>Activity</h2>
       <div class="tabs" role="tablist" aria-label="Activity">
-        <button type="button" role="tab" id="tab-comments" aria-selected="true" aria-controls="activity-content" hx-get="/issues/{{ issue.key }}/activity/comments" hx-target="#activity-content">Comments</button>
+        <button type="button" role="tab" id="tab-all" aria-selected="true" aria-controls="activity-content" hx-get="/issues/{{ issue.key }}/activity/all" hx-target="#activity-content">All</button>
+        <button type="button" role="tab" id="tab-comments" aria-selected="false" aria-controls="activity-content" hx-get="/issues/{{ issue.key }}/activity/comments" hx-target="#activity-content">Comments</button>
         <button type="button" role="tab" id="tab-history" aria-selected="false" aria-controls="activity-content" hx-get="/issues/{{ issue.key }}/activity/history" hx-target="#activity-content">History</button>
+        <button type="button" role="tab" id="tab-source-updates" aria-selected="false" aria-controls="activity-content" hx-get="/issues/{{ issue.key }}/activity/source-updates" hx-target="#activity-content">Source updates</button>
       </div>
       <div id="activity-content" role="tabpanel">
-        {% include "issue/_comments.html" %}
+        {% include "issue/_timeline.html" %}
       </div>
     </section>
   </div>

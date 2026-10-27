@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Compare source #{{ source.id }} — AI_OIL{% endblock %}
+{% block content %}
+<div class="source-page">
+  <h1>Compare v{{ a }} and v{{ b }}</h1>
+  <p><a href="/sources/{{ source.id }}">#{{ source.id }} {{ source.object_type }} {{ source.label }}</a></p>
+  {% if table -%}
+  {{ table|safe }}
+  {%- else -%}
+  <p class="placeholder">No differences.</p>
+  {%- endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{#- The All and Source updates tabs: one chronological timeline, each item expandable in place (UI-23, UI-24). -#}
+<div class="timeline">
+  {% for row in rows -%}
+  {% set item = row.item -%}
+  <details class="timeline-item kind-{{ item.kind }}">
+    <summary>
+      <span class="timeline-time muted">{{ row.time }}</span>
+      <span class="timeline-kind badge"><span aria-hidden="true">{{ row.icon }}</span> {{ row.label }}</span>
+      <span class="timeline-title">{{ item.title }}</span>
+      {% if row.show_actor %}<span class="timeline-actor muted">{{ item.actor }}</span>{% endif %}
+    </summary>
+    <div class="timeline-detail">
+      {% if item.meta.to or item.meta.cc -%}
+      {% if item.meta.to %}<p class="timeline-people"><span class="muted">To:</span> {{ item.meta.to|join(", ") }}</p>{% endif %}
+      {% if item.meta.cc %}<p class="timeline-people"><span class="muted">Cc:</span> {{ item.meta.cc|join(", ") }}</p>{% endif %}
+      {%- elif item.meta.recipients -%}
+      <p class="timeline-people"><span class="muted">Recipients:</span> {{ item.meta.recipients|join(", ") }}</p>
+      {%- endif %}
+      {% if item.body %}<div class="timeline-body text">{{ item.body }}</div>{% endif %}
+      {% if item.meta.attachments -%}
+      <p class="timeline-attachments"><span class="muted">Attachments:</span> {{ item.meta.attachments|join(", ") }}</p>
+      {%- endif %}
+      <p class="timeline-links">
+        {% if row.compare %}<a class="timeline-compare" href="{{ row.compare }}">Compare with previous</a>{% endif %}
+        {% if item.link %}<a class="timeline-source" href="{{ item.link }}">Open source page</a>{% endif %}
+      </p>
+    </div>
+  </details>
+  {% else -%}
+  <p class="placeholder">{{ empty_text }}</p>
+  {%- endfor %}
+  {% if cut_off %}<p class="muted timeline-limit">Showing the latest {{ limit }} items.</p>{% endif %}
+</div>

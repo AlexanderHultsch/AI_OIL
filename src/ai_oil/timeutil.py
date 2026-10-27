@@ -27,3 +27,8 @@ def parse_iso(value: str) -> datetime:
         except ValueError:
             continue
     raise ValueError(f"not an ISO UTC timestamp: {value!r}")
+
+
+def local_display(value: str) -> str:
+    """A stored UTC timestamp as local time `YYYY-MM-DD HH:MM`, for display."""
+    return parse_iso(value).astimezone().strftime("%Y-%m-%d %H:%M")

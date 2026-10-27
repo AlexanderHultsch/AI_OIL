@@ -9,9 +9,10 @@ from fastapi import APIRouter, Depends, Form, Request
 from starlette.responses import Response
 
 from ai_oil import timeutil
-from ai_oil.domain import comments, history, issue_links, issues, people, projects
+from ai_oil.domain import comments, history_view, issue_links, issues, people, projects
 from ai_oil.errors import NotFoundError, ValidationError
 from ai_oil.governance import audit
+from ai_oil.sources import activity
 from ai_oil.web.deps import db_read, db_write
 from ai_oil.web.rendering import render
 from ai_oil.web.routes.issue_sources import sources_context
@@ -58,9 +59,21 @@ RELATION_LABELS = {
     "is_duplicated_by": "is duplicated by",
 }
 LINK_DIRECTIONS = ("outward", "inward")
-PERSON_FIELDS = ("assignee", "reporter")  # history fields that hold person ids (DM-33)
-MAX_HISTORY_TEXT = 200
-NO_VALUE = "—"
+ACTIVITY_LIMIT = 200
+NO_TIME = "—"
+TIMELINE_TABS = {
+    "all": (activity.KINDS, "No activity yet."),
+    "source-updates": (("entry", "version"), "No source updates yet."),
+}  # UI-23: the timeline tabs, the kinds each merges and the text when it is empty
+ENTRY_LABELS = {
+    "email_message": ("✉", "Email"),
+    "jira_comment": ("◆", "Jira comment"),
+    "jira_change": ("◆", "Jira change"),
+    "confluence_comment": ("▤", "Confluence comment"),
+    "teams_message": ("☰", "Teams"),
+    "note_text": ("✎", "Note"),
+}
+KIND_LABELS = {"comment": ("✎", "Comment"), "history": ("↺", "History"), "version": ("⟳", "New version")}
 
 
 @dataclass(frozen=True)
@@ -103,21 +116,15 @@ class CommentRow:
 
 
 @dataclass(frozen=True)
-class HistoryLine:
-    field: str
-    op: str
-    old: str
-    new: str
+class TimelineRow:
+    """One timeline item as the template shows it (UI-23, UI-24)."""
 
-
-@dataclass(frozen=True)
-class HistoryGroup:
-    """The events of one change set (DM-30) with who caused them and when."""
-
+    item: activity.ActivityItem
     time: str
-    actor: str
-    proposal: str | None
-    events: tuple[HistoryLine, ...]
+    icon: str
+    label: str
+    show_actor: bool
+    compare: str | None
 
 
 def _context(
@@ -184,59 +191,45 @@ def _comments_context(conn: sqlalchemy.Connection, issue: issues.Issue) -> dict[
     return {"issue": issue, "comments": rows}
 
 
-def _display_value(field: str, value: str | None, names: dict[int, str]) -> str:
-    """A raw stored value as shown: person names, local times, shortened text (DM-33)."""
-    if value is None:
-        return NO_VALUE
-    if field in PERSON_FIELDS and value.isdigit():
-        return names.get(int(value), value)
-    if field.endswith("_at"):
-        try:
-            return _local_time(value)
-        except ValueError:
-            return value
-    if len(value) > MAX_HISTORY_TEXT:
-        return value[:MAX_HISTORY_TEXT] + "…"
-    return value
+def _timeline_row(item: activity.ActivityItem) -> TimelineRow:
+    icon, label = (
+        ENTRY_LABELS.get(item.meta["entry_type"], ("•", "Source"))
+        if item.kind == "entry"
+        else KIND_LABELS[item.kind]
+    )
+    try:
+        time = _local_time(item.at)
+    except ValueError:
+        time = item.at or NO_TIME
+    compare = None
+    if item.kind == "version":
+        compare = f"{item.link}/diff?a={item.meta['previous_version_no']}&b={item.meta['version_no']}"
+    return TimelineRow(
+        item=item,
+        time=time,
+        icon=icon,
+        label=label,
+        show_actor=item.actor is not None and item.actor not in item.title,
+        compare=compare,
+    )
 
 
-def _actor_label(entry: history.HistoryEntry, me: people.Person, names: dict[int, str]) -> str:
-    if entry.actor_type != "user":
-        return entry.actor_type
-    if entry.actor_id is None:
-        return "user"
-    return "You" if entry.actor_id == me.id else names.get(entry.actor_id, "user")
+def _timeline_context(conn: sqlalchemy.Connection, issue: issues.Issue, tab: str) -> dict[str, object]:
+    """The merged timeline of one tab, newest first; one extra item shows whether it was cut (UI-23)."""
+    kinds, empty_text = TIMELINE_TABS[tab]
+    found = activity.issue_activity(conn, issue.key, kinds=kinds, limit=ACTIVITY_LIMIT + 1)
+    return {
+        "issue": issue,
+        "rows": [_timeline_row(item) for item in found[:ACTIVITY_LIMIT]],
+        "cut_off": len(found) > ACTIVITY_LIMIT,
+        "limit": ACTIVITY_LIMIT,
+        "empty_text": empty_text,
+    }
 
 
 def _history_context(conn: sqlalchemy.Connection, issue: issues.Issue) -> dict[str, object]:
     """The history of the issue as change sets, newest first (DM-30, DM-32, DM-33)."""
-    names = _names(conn)
-    me = people.get_me(conn)
-    grouped: dict[int, list[history.HistoryEntry]] = {}
-    for entry in history.issue_history(conn, issue.id):
-        grouped.setdefault(entry.change_set_id, []).append(entry)
-    groups = []
-    newest_first = sorted(grouped.items(), key=lambda item: (item[1][0].at, item[0]), reverse=True)
-    for _, entries in newest_first:
-        first = entries[0]
-        groups.append(
-            HistoryGroup(
-                time=_local_time(first.at),
-                actor=_actor_label(first, me, names),
-                proposal=(
-                    f"(accepted AI proposal #{first.proposal_id})" if first.proposal_id is not None else None
-                ),
-                events=tuple(
-                    HistoryLine(
-                        field=entry.field,
-                        op=entry.op,
-                        old=_display_value(entry.field, entry.old_value, names),
-                        new=_display_value(entry.field, entry.new_value, names),
-                    )
-                    for entry in entries
-                ),
-            )
-        )
+    groups = history_view.change_sets(conn, issue.id, people.get_me(conn), _names(conn))
     return {"issue": issue, "groups": groups}
 
 
@@ -271,7 +264,7 @@ def issue_detail(request: Request, key: str, conn: Annotated[sqlalchemy.Connecti
         **_side_context(conn, issue),
         **_links_context(conn, issue),
         **sources_context(conn, issue),
-        **_comments_context(conn, issue),
+        **_timeline_context(conn, issue, "all"),
         "nav_active": "issues",
     }
     return render(request, "issue/detail.html", context)
@@ -483,6 +476,8 @@ def activity_tab(
 ) -> Response:
     """One tab of the activity area as a fragment (UI-23)."""
     issue = issues.get_issue(conn, key)
+    if tab in TIMELINE_TABS:
+        return render(request, "issue/_timeline.html", _timeline_context(conn, issue, tab))
     if tab == "comments":
         return _comments_response(request, conn, issue)
     if tab == "history":

@@ -46,3 +46,11 @@ def test_today_uses_now(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(timeutil, "_now", lambda: frozen)
     assert timeutil.today() == frozen.astimezone().date()
     assert isinstance(timeutil.today(), date)
+
+
+def test_local_display_formats_a_stored_timestamp_in_local_time() -> None:
+    expected = datetime(2026, 10, 26, 9, 15, tzinfo=UTC).astimezone().strftime("%Y-%m-%d %H:%M")
+    assert timeutil.local_display("2026-10-26T09:15:00.123Z") == expected
+    assert timeutil.local_display("2026-10-26T09:15:00Z") == expected
+    with pytest.raises(ValueError):
+        timeutil.local_display("")
