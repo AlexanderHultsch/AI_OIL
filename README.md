@@ -8,27 +8,14 @@ Single user, local on a Windows laptop, Python, SQLite.
 
 **Phases 1 and 2 are implemented**: data model, Manual / Outlook / Jira / Confluence / SharePoint connectors, on-demand sync with versioning, full-text search and the OQL query language, CLI, backup — and a Jira-like local web interface (`oil serve`, then http://127.0.0.1:8765/). Phases 3–5 (AI) are not started.
 
-Quick start (Windows, Python 3.12, classic Outlook):
-
-```
-python -m venv .venv && .venv\Scripts\pip install -e .[dev]
-oil init --name "Your Name" --email you@example.com
-oil project add OIL "Open issues"
-oil connector add outlook Outlook
-oil connector add jira Jira --setting base_url=https://acme.atlassian.net --setting email=you@example.com --token
-oil connector check --live
-oil issue create -p OIL -s "Clarify inductor lead time" -d "Supplier quoted 26 weeks"
-oil link OIL-1 --outlook-selected
-oil sync --all
-oil search 'text ~ "lead time" AND statusCategory != Done'
-oil serve
-```
+**Installation on Windows:** follow [`docs/install_windows.md`](docs/install_windows.md) — code in your (OneDrive-synced) Documents folder is fine, but the Python environment and the database stay in `%LOCALAPPDATA%\AI_OIL`, and only the daily backups go to OneDrive.
 
 | Document | Content |
 |---|---|
-| [`docs/specification.md`](docs/specification.md) | The specification (v0.3). Chapter 9 lists every CLI command |
+| [`docs/specification.md`](docs/specification.md) | The specification (v0.4). Chapter 9 lists every CLI command |
 | [`src/ai_oil/db/sql/0001_baseline.sql`](src/ai_oil/db/sql/0001_baseline.sql) | The data model as an executable SQLite schema |
 | [`docs/implementation_plan.md`](docs/implementation_plan.md) | Conventions, work order and status |
+| [`docs/install_windows.md`](docs/install_windows.md) | Installation, first run and updates on the Windows laptop |
 | [`docs/open_points.md`](docs/open_points.md) | Every open point, limitation and decision, for all phases |
 
 ## Phases
