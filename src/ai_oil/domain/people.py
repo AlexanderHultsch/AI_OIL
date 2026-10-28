@@ -131,6 +131,14 @@ def get_person(conn: sqlalchemy.Connection, person_id: int) -> Person:
     return _person(row)
 
 
+def surviving_person(conn: sqlalchemy.Connection, person_id: int) -> Person:
+    """The person with this id, or the person it was merged into, following the chain to its end (DM-23)."""
+    person = get_person(conn, person_id)
+    while person.merged_into_id is not None:
+        person = get_person(conn, person.merged_into_id)
+    return person
+
+
 def get_me(conn: sqlalchemy.Connection) -> Person:
     row = conn.execute(text(f"SELECT {_PERSON_COLUMNS} FROM person WHERE is_me = 1")).mappings().first()
     if row is None:
@@ -213,10 +221,7 @@ def find_person_by_identity(conn: sqlalchemy.Connection, system: str, external_i
     identity = _find_identity(conn, system, normalize_external_id(system, external_id))
     if identity is None:
         return None
-    person = get_person(conn, identity.person_id)
-    while person.merged_into_id is not None:
-        person = get_person(conn, person.merged_into_id)
-    return person
+    return surviving_person(conn, identity.person_id)
 
 
 def resolve_identity(

@@ -63,8 +63,8 @@ Everything here was built and tested against recorded fixtures and simulated sys
 
 | ID | Question | Proposal | Status |
 |---|---|---|---|
-| OP-30 | May archived projects still receive new issues and labels? | Decided 28 October 2026: archiving a project is refused while any of its issues is not Done or Cancelled; the error lists those issue keys. An archived project accepts no new issues. Its existing issues stay editable and can be reopened. To be built in step D2 | decided (step D2) |
-| OP-31 | May merged persons still be assigned (by id)? | Decided 28 October 2026: assigning (or setting reporter, or any person reference) to a merged person is redirected to the surviving person, following the merge chain. To be built in step D2 | decided (step D2) |
+| OP-30 | May archived projects still receive new issues and labels? | Decided 28 October 2026: archiving a project is refused while any of its issues is not Done or Cancelled; the error lists those issue keys. An archived project accepts no new issues. Its existing issues stay editable and can be reopened. To be built in step D2 | closed (built in D2) |
+| OP-31 | May merged persons still be assigned (by id)? | Decided 28 October 2026: assigning (or setting reporter, or any person reference) to a merged person is redirected to the surviving person, following the merge chain. To be built in step D2 | closed (built in D2) |
 | OP-32 | Custom fields per project (spec OI-6) | Decided 28 October 2026: not now; add custom fields when a concrete field is missing (then an `issue_field_value` table) | closed (revisit on need) |
 | OP-33 | Semantic search with embeddings (spec OI-10) | Decided 28 October 2026: only if keyword search proves insufficient after P4 | closed (revisit after P4) |
 | OP-34 | Outlook online archive, PST files and shared mailboxes (spec OI-2) | Decided 28 October 2026: keep today's scope (Inbox + subfolders + Sent Items + extra folders); decide after the Outlook test OP-2 | decide (after OP-2) |

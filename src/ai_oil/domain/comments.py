@@ -62,7 +62,7 @@ def add_comment(
     """Add a comment and record its text in history (DM-19, DM-30)."""
     issue = issues.get_issue(conn, key)
     body = _body(body)
-    author = people.get_person(conn, author_id)
+    author = people.surviving_person(conn, author_id)
     now = utcnow_iso()
     comment_id = conn.execute(
         text(

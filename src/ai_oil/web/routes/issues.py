@@ -374,6 +374,7 @@ def inline_edit(
         after = issues.update_issue(conn, key, {"priority": value}, actor_id=me.id)
     elif field == "assignee":
         after = issues.update_issue(conn, key, {"assignee_id": _assignee_id(value)}, actor_id=me.id)
+        detail["assignee"] = None if after.assignee_id is None else str(after.assignee_id)
     else:
         after = issues.update_issue(conn, key, {"due_date": _due_date(value)}, actor_id=me.id)
     if after != before:

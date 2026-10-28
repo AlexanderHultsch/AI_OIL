@@ -477,6 +477,27 @@ def test_saving_the_assignee_and_reporter(detail_app: FastAPI, post) -> None:
     ]
 
 
+def test_saving_a_merged_person_stores_and_audits_the_survivor(detail_app: FastAPI, post) -> None:
+    bea = person_id(detail_app, "Bea Brandt")
+    twin = person_id(detail_app, "Bea B.")
+
+    assigned = post("/issues/OIL-4/field/assignee", {"value": str(twin)})
+    reported = post("/issues/OIL-4/field/reporter", {"value": str(twin)})
+
+    assert side_rows(assigned.text)["Assignee"] == "Bea Brandt"
+    assert side_rows(reported.text)["Reporter"] == "Bea Brandt"
+    issue = load(detail_app, "OIL-4")
+    assert (issue.assignee_id, issue.reporter_id) == (bea, bea)
+    assert [(e[0], e[2]) for e in changes(detail_app, "OIL-4") if e[0] in ("assignee", "reporter")] == [
+        ("assignee", str(bea)),
+        ("reporter", str(bea)),
+    ]
+    assert [e.detail for e in reversed(entries(detail_app))] == [
+        {"assignee": str(bea), "via": "web"},
+        {"reporter": str(bea), "via": "web"},
+    ]
+
+
 def test_clearing_the_parent_removes_it(detail_app: FastAPI, post) -> None:
     response = post("/issues/OIL-2/field/parent", {"value": ""})
 

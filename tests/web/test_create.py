@@ -132,6 +132,15 @@ def test_an_archived_or_unknown_project_falls_back_to_the_first(client: TestClie
     assert [(v, s) for v, _, s in options_of(page, "create-project")] == [("ABC", True), ("OIL", False)]
 
 
+def test_an_archived_project_is_not_offered_in_the_project_choice(app: FastAPI, client: TestClient) -> None:
+    with app.state.engine.begin() as conn:
+        projects.update_project(conn, "ABC", archived=True)
+
+    page = client.get("/issues/new", params={"project": "ABC"}).text
+
+    assert [(v, s) for v, _, s in options_of(page, "create-project")] == [("OIL", True)]
+
+
 def test_changing_the_project_asks_for_its_component_options(client: TestClient) -> None:
     page = client.get("/issues/new").text
 
@@ -242,6 +251,48 @@ def test_creating_with_all_fields_stores_them_and_audits(app: FastAPI, client: T
         "via": "web",
     }
     assert client.get(response.headers["location"]).status_code == 200
+
+
+def test_creating_in_an_archived_project_is_refused_and_nothing_is_stored(app: FastAPI, post) -> None:
+    before = issue_count(app)
+
+    response = post(
+        "/issues",
+        {"project": "OLD", "issue_type": "Task", "summary": "Late", "description": "Too late"},
+    )
+
+    assert response.status_code == 422
+    assert ERROR_PREFIX in response.text
+    assert "project OLD is archived — unarchive it to add issues" in response.text
+    assert issue_count(app) == before
+    assert audit_entries(app, "issue.create") == []
+    with app.state.engine.begin() as conn:
+        assert projects.get_project(conn, "OLD").next_number == 2
+
+
+def test_an_assignee_that_was_merged_is_stored_and_audited_as_the_survivor(app: FastAPI, post) -> None:
+    bea = add_person(app, "Bea Brandt")
+    twin = add_person(app, "Bea B.")
+    with app.state.engine.begin() as conn:
+        people.merge_persons(conn, twin, bea, actor_id=people.get_me(conn).id)
+
+    response = post(
+        "/issues",
+        {
+            "project": "ABC",
+            "issue_type": "Task",
+            "summary": "Plain",
+            "description": "Text",
+            "assignee": str(twin),
+        },
+    )
+
+    assert response.status_code == 303
+    with app.state.engine.begin() as conn:
+        issue = issues.get_issue(conn, "ABC-1")
+    assert issue.assignee_id == bea
+    [entry] = audit_entries(app, "issue.create")
+    assert entry.detail["assignee"] == bea
 
 
 def test_creating_with_only_the_required_fields_uses_the_defaults(app: FastAPI, post) -> None:

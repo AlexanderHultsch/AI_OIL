@@ -167,7 +167,7 @@ def create(
                     "type": issue_type,
                     "parent": parent_key,
                     "priority": priority,
-                    "assignee": assignee_id,
+                    "assignee": issue.assignee_id,
                     "reporter": None,
                     "due": due_date.isoformat() if due_date else None,
                     "acceptance": acceptance_criteria,

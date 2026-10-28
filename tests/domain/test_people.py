@@ -287,3 +287,28 @@ def test_update_person_rejects_blank_name_and_unknown_person(conn: sqlalchemy.Co
     assert people.get_person(conn, person.id).display_name == "Sam"
     with pytest.raises(NotFoundError):
         people.update_person(conn, 999, display_name="X")
+
+
+def test_surviving_person_follows_the_merge_chain(conn: sqlalchemy.Connection) -> None:
+    me = people.create_person(conn, "Alex", is_me=True)
+    first = people.create_person(conn, "S.")
+    second = people.create_person(conn, "Sam")
+    survivor = people.create_person(conn, "Samuel Smith")
+    people.merge_persons(conn, first.id, second.id, actor_id=me.id)
+    people.merge_persons(conn, second.id, survivor.id, actor_id=me.id)
+
+    assert people.surviving_person(conn, first.id) == survivor
+    assert people.surviving_person(conn, second.id) == survivor
+    assert people.surviving_person(conn, survivor.id) == survivor
+    with pytest.raises(NotFoundError):
+        people.surviving_person(conn, 999)
+
+
+def test_lookup_person_still_ignores_merged_display_names(conn: sqlalchemy.Connection) -> None:
+    me = people.create_person(conn, "Alex", is_me=True)
+    duplicate = people.create_person(conn, "Sam")
+    survivor = people.create_person(conn, "Samuel Smith")
+    people.merge_persons(conn, duplicate.id, survivor.id, actor_id=me.id)
+
+    with pytest.raises(NotFoundError):
+        people.lookup_person(conn, "Sam")

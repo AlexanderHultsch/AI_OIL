@@ -1,7 +1,7 @@
 import pytest
 import sqlalchemy
 
-from ai_oil.domain import projects
+from ai_oil.domain import issues, people, projects
 from ai_oil.errors import ConflictError, NotFoundError, ValidationError
 
 
@@ -145,3 +145,154 @@ def test_label_reuse_is_case_insensitive(conn: sqlalchemy.Connection) -> None:
     assert again == first
     projects.get_or_create_label(conn, "alpha")
     assert [label.name for label in projects.list_labels(conn)] == ["alpha", "Hardware"]
+
+
+# --- archiving (DM-1, OP-30) ---------------------------------------------------------------------------
+
+
+def _project_with_issues(conn: sqlalchemy.Connection, count: int) -> people.Person:
+    me = people.create_person(conn, "Alex", is_me=True)
+    projects.create_project(conn, "OIL", "Open issues")
+    for number in range(count):
+        issues.create_issue(conn, "OIL", f"Issue {number + 1}", "Description", actor_id=me.id)
+    return me
+
+
+def test_closed_statuses_are_the_done_category() -> None:
+    assert projects._CLOSED_STATUSES == tuple(
+        status for status, category in issues.STATUS_CATEGORY.items() if category == "Done"
+    )
+
+
+def test_archiving_is_refused_while_issues_are_open_and_changes_nothing(conn: sqlalchemy.Connection) -> None:
+    me = _project_with_issues(conn, 7)
+    issues.transition_issue(conn, "OIL-2", "Done", actor_id=me.id)
+    issues.transition_issue(conn, "OIL-3", "Cancelled", actor_id=me.id, reason="not needed")
+    issues.transition_issue(conn, "OIL-5", "Blocked", actor_id=me.id, reason="waiting")
+    issues.transition_issue(conn, "OIL-6", "Done", actor_id=me.id)
+
+    with pytest.raises(ValidationError) as excinfo:
+        projects.update_project(conn, "OIL", name="Renamed", archived=True)
+
+    assert str(excinfo.value) == (
+        "project OIL cannot be archived: 4 issues are not Done or Cancelled: OIL-1, OIL-4, OIL-5, OIL-7"
+    )
+    project = projects.get_project(conn, "OIL")
+    assert (project.archived, project.name) == (False, "Open issues")
+
+
+def test_archive_refusal_message_names_the_open_issues_in_number_order(conn: sqlalchemy.Connection) -> None:
+    me = _project_with_issues(conn, 7)
+    for number in (2, 3, 5, 6):
+        issues.transition_issue(conn, f"OIL-{number}", "Done", actor_id=me.id)
+
+    with pytest.raises(ValidationError) as excinfo:
+        projects.update_project(conn, "OIL", archived=True)
+
+    assert str(excinfo.value) == (
+        "project OIL cannot be archived: 3 issues are not Done or Cancelled: OIL-1, OIL-4, OIL-7"
+    )
+
+
+def test_archive_refusal_for_a_single_open_issue(conn: sqlalchemy.Connection) -> None:
+    _project_with_issues(conn, 1)
+
+    with pytest.raises(ValidationError) as excinfo:
+        projects.update_project(conn, "OIL", archived=True)
+
+    assert str(excinfo.value) == "project OIL cannot be archived: 1 issue is not Done or Cancelled: OIL-1"
+
+
+def test_archive_refusal_lists_ten_keys_by_number_and_counts_the_rest(conn: sqlalchemy.Connection) -> None:
+    _project_with_issues(conn, 13)
+
+    with pytest.raises(ValidationError) as excinfo:
+        projects.update_project(conn, "OIL", archived=True)
+
+    keys = ", ".join(f"OIL-{number}" for number in range(1, 11))
+    assert str(excinfo.value) == (
+        f"project OIL cannot be archived: 13 issues are not Done or Cancelled: {keys} and 3 more"
+    )
+    assert projects.get_project(conn, "OIL").archived is False
+
+
+def test_archive_refusal_exactly_at_the_cap_has_no_more_suffix(conn: sqlalchemy.Connection) -> None:
+    _project_with_issues(conn, 10)
+
+    with pytest.raises(ValidationError) as excinfo:
+        projects.update_project(conn, "OIL", archived=True)
+
+    assert str(excinfo.value).endswith("OIL-9, OIL-10")
+
+
+def test_archive_refusal_ignores_issues_of_other_projects(conn: sqlalchemy.Connection) -> None:
+    me = _project_with_issues(conn, 1)
+    projects.create_project(conn, "ABC", "Alphabet")
+    issues.transition_issue(conn, "OIL-1", "Done", actor_id=me.id)
+    issues.create_issue(conn, "ABC", "Open elsewhere", "Description", actor_id=me.id)
+
+    assert projects.update_project(conn, "OIL", archived=True).archived is True
+
+
+def test_archiving_is_allowed_when_all_issues_are_done_or_cancelled(conn: sqlalchemy.Connection) -> None:
+    me = _project_with_issues(conn, 2)
+    issues.transition_issue(conn, "OIL-1", "Done", actor_id=me.id)
+    issues.transition_issue(conn, "OIL-2", "Cancelled", actor_id=me.id, reason="not needed")
+
+    assert projects.update_project(conn, "OIL", archived=True).archived is True
+
+
+def test_archiving_is_allowed_without_issues(conn: sqlalchemy.Connection) -> None:
+    projects.create_project(conn, "OIL", "Open issues")
+
+    assert projects.update_project(conn, "OIL", archived=True).archived is True
+
+
+def test_unarchiving_is_always_allowed(conn: sqlalchemy.Connection) -> None:
+    me = _project_with_issues(conn, 2)
+    issues.transition_issue(conn, "OIL-1", "Done", actor_id=me.id)
+    issues.transition_issue(conn, "OIL-2", "Done", actor_id=me.id)
+    projects.update_project(conn, "OIL", archived=True)
+    issues.transition_issue(conn, "OIL-2", "In Progress", actor_id=me.id)
+
+    assert projects.update_project(conn, "OIL", archived=False).archived is False
+
+
+def test_archiving_an_archived_project_again_is_a_noop(conn: sqlalchemy.Connection) -> None:
+    me = _project_with_issues(conn, 1)
+    issues.transition_issue(conn, "OIL-1", "Done", actor_id=me.id)
+    projects.update_project(conn, "OIL", archived=True)
+    issues.transition_issue(conn, "OIL-1", "In Progress", actor_id=me.id)
+
+    assert projects.update_project(conn, "OIL", archived=True).archived is True
+
+
+# --- project lead and merged persons (DM-23, OP-31) ----------------------------------------------------
+
+
+def test_project_lead_is_redirected_to_the_surviving_person(conn: sqlalchemy.Connection) -> None:
+    me = people.create_person(conn, "Alex", is_me=True)
+    duplicate = people.create_person(conn, "Sam")
+    survivor = people.create_person(conn, "Samuel Smith")
+    people.merge_persons(conn, duplicate.id, survivor.id, actor_id=me.id)
+
+    created = projects.create_project(conn, "OIL", "Open issues", lead_id=duplicate.id)
+    updated = projects.update_project(conn, "OIL", lead_id=duplicate.id)
+    other = projects.create_project(conn, "ABC", "Alphabet")
+    redirected = projects.update_project(conn, other.key, lead_id=duplicate.id)
+
+    assert created.lead_id == survivor.id
+    assert updated.lead_id == survivor.id
+    assert redirected.lead_id == survivor.id
+
+
+def test_project_lead_follows_a_two_step_merge_chain(conn: sqlalchemy.Connection) -> None:
+    me = people.create_person(conn, "Alex", is_me=True)
+    first = people.create_person(conn, "S.")
+    second = people.create_person(conn, "Sam")
+    survivor = people.create_person(conn, "Samuel Smith")
+    people.merge_persons(conn, first.id, second.id, actor_id=me.id)
+    people.merge_persons(conn, second.id, survivor.id, actor_id=me.id)
+    projects.create_project(conn, "OIL", "Open issues")
+
+    assert projects.update_project(conn, "OIL", lead_id=first.id).lead_id == survivor.id

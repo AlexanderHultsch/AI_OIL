@@ -229,7 +229,7 @@ def _person_id(conn: sqlalchemy.Connection, field: str, value: object, *, requir
         return None
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValidationError(f"{field} must be a person id")
-    return people.get_person(conn, value).id
+    return people.surviving_person(conn, value).id
 
 
 def _date_value(field: str, value: object) -> date | None:
@@ -297,6 +297,8 @@ def create_issue(
 ) -> Issue:
     """Create an issue in status New with one history event (DM-5, DM-7, DM-11, DM-12, DM-15, DM-30)."""
     project = projects.get_project(conn, project_key)
+    if project.archived:
+        raise ValidationError(f"project {project.key} is archived — unarchive it to add issues")
     summary = _summary(summary)
     description = _description(description)
     issue_type = _choice("issue_type", issue_type, ISSUE_TYPES)

@@ -35,7 +35,6 @@ def _seed_web(path: Path) -> None:
             projects.create_project(conn, "OIL", "Open issues")
             projects.create_project(conn, "ABC", "Alphabet")
             projects.create_project(conn, "OLD", "Retired")
-            projects.update_project(conn, "OLD", archived=True)
             issues.create_issue(conn, "OIL", "First", "Not started", actor_id=me.id)
             issues.create_issue(conn, "OIL", "Second", "Not started either", actor_id=me.id)
             issues.create_issue(conn, "OIL", "Third", "Running", actor_id=me.id)
@@ -43,6 +42,7 @@ def _seed_web(path: Path) -> None:
             issues.create_issue(conn, "OIL", "Fourth", "Finished", actor_id=me.id)
             issues.transition_issue(conn, "OIL-4", "Done", actor_id=me.id)
             issues.create_issue(conn, "OLD", "Hidden", "In an archived project", actor_id=me.id)
+            conn.execute(text("UPDATE project SET archived = 1 WHERE key = 'OLD'"))
     finally:
         engine.dispose()
 

@@ -5,7 +5,7 @@ import pytest
 
 from ai_oil import timeutil
 from ai_oil.cli.main import main
-from ai_oil.domain import history, issues
+from ai_oil.domain import history, issues, people, projects
 from ai_oil.governance import audit
 
 NOW = "2026-10-27T08:00:00.000Z"
@@ -278,6 +278,59 @@ def test_failed_edit_changes_nothing(oil, db, capsys: pytest.CaptureFixture[str]
         assert (issue.summary, issue.labels, issue.status) == ("Old", (), "New")
         assert [e.action for e in audit.list_entries(conn, action_prefix="issue.")] == ["issue.create"]
         assert len(history.issue_history(conn, issue.id)) == 1
+
+
+@pytest.mark.usefixtures("project")
+def test_create_in_an_archived_project_is_an_error(oil, db, capsys: pytest.CaptureFixture[str]) -> None:
+    with db() as conn:
+        projects.update_project(conn, "OIL", archived=True)
+        conn.commit()
+
+    assert oil("issue", "create", "-p", "OIL", "-s", "Late", "-d", "D") == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "error: project OIL is archived — unarchive it to add issues\n"
+    with db() as conn:
+        assert projects.get_project(conn, "OIL").next_number == 1
+        assert audit.list_entries(conn, action_prefix="issue.") == []
+
+
+@pytest.mark.usefixtures("project")
+def test_issues_of_an_archived_project_can_still_be_edited_and_reopened(
+    oil, db, capsys: pytest.CaptureFixture[str]
+) -> None:
+    oil("issue", "create", "-p", "OIL", "-s", "Old", "-d", "D")
+    oil("issue", "edit", "OIL-1", "--status", "Done")
+    with db() as conn:
+        projects.update_project(conn, "OIL", archived=True)
+        conn.commit()
+    capsys.readouterr()
+
+    assert oil("issue", "edit", "OIL-1", "--summary", "New", "--status", "In Progress") == 0
+
+    with db() as conn:
+        issue = issues.get_issue(conn, "OIL-1")
+        assert (issue.summary, issue.status) == ("New", "In Progress")
+
+
+@pytest.mark.usefixtures("project")
+def test_assignee_and_reporter_that_were_merged_are_stored_as_the_survivor(oil, db) -> None:
+    oil("person", "add", "Sam")
+    oil("person", "add", "Samuel Smith")
+    with db() as conn:
+        me = people.get_me(conn)
+        sam = people.lookup_person(conn, "Sam")
+        survivor = people.lookup_person(conn, "Samuel Smith")
+        people.merge_persons(conn, sam.id, survivor.id, actor_id=me.id)
+        conn.commit()
+
+    assert oil("issue", "create", "-p", "OIL", "-s", "A", "-d", "D", "--reporter", str(sam.id)) == 0
+    assert oil("issue", "edit", "OIL-1", "--assignee", str(sam.id)) == 0
+
+    with db() as conn:
+        issue = issues.get_issue(conn, "OIL-1")
+        assert (issue.assignee_id, issue.reporter_id) == (survivor.id, survivor.id)
 
 
 @pytest.mark.usefixtures("project")

@@ -590,6 +590,22 @@ def test_assignee_edit_and_unassign(nav_app: FastAPI, post) -> None:
     ]
 
 
+def test_assigning_a_merged_person_in_the_table_stores_and_audits_the_survivor(
+    nav_app: FastAPI, post
+) -> None:
+    bea = person_id(nav_app, "Bea Brandt")
+    with nav_app.state.engine.begin() as conn:
+        twin = people.create_person(conn, "Bea B.")
+        people.merge_persons(conn, twin.id, bea, actor_id=people.get_me(conn).id)
+
+    response = post("/issues/OIL-3/inline/assignee", {"value": str(twin.id), "columns": "assignee"})
+
+    assert response.status_code == 200
+    assert issue_row(nav_app, "OIL-3").assignee_id == bea
+    assert changes(nav_app, "OIL-3")[-1] == ("assignee", None, str(bea))
+    assert entries(nav_app, "issue.")[0].detail == {"assignee": str(bea), "via": "web"}
+
+
 def test_due_date_edit(nav_app: FastAPI, post) -> None:
     response = post("/issues/OIL-3/inline/due", {"value": "2026-12-01"})
 

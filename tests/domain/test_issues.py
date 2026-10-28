@@ -817,3 +817,114 @@ def test_get_issues_by_ids_unknown_id(
 
     with pytest.raises(NotFoundError):
         issues.get_issues_by_ids(conn, [existing.id, 999])
+
+
+# --- archived projects (DM-1, OP-30) --------------------------------------------------------------------
+
+
+def test_create_in_an_archived_project_is_refused(conn: sqlalchemy.Connection, me, oil) -> None:
+    projects.update_project(conn, "OIL", archived=True)
+    sets = change_set_count(conn)
+
+    with pytest.raises(ValidationError) as excinfo:
+        make(conn, me)
+
+    assert str(excinfo.value) == "project OIL is archived — unarchive it to add issues"
+    assert projects.get_project(conn, "OIL").next_number == 1
+    assert change_set_count(conn) == sets
+
+
+def test_create_works_again_after_unarchiving(conn: sqlalchemy.Connection, me, oil) -> None:
+    projects.update_project(conn, "OIL", archived=True)
+    projects.update_project(conn, "OIL", archived=False)
+
+    assert make(conn, me).key == "OIL-1"
+
+
+def test_issues_of_an_archived_project_stay_editable_and_can_be_reopened(
+    conn: sqlalchemy.Connection, me, oil
+) -> None:
+    issue = make(conn, me)
+    issues.transition_issue(conn, issue.key, "Done", actor_id=me.id)
+    projects.update_project(conn, "OIL", archived=True)
+    sam = people.create_person(conn, "Sam")
+
+    edited = issues.update_issue(
+        conn, issue.key, {"summary": "Edited", "assignee_id": sam.id, "priority": "P1"}, actor_id=me.id
+    )
+    labelled = issues.add_label(conn, issue.key, "emc", actor_id=me.id)
+    reopened = issues.transition_issue(conn, issue.key, "In Progress", actor_id=me.id)
+    done = issues.transition_issue(conn, issue.key, "Done", actor_id=me.id)
+
+    assert (edited.summary, edited.assignee_id, edited.priority) == ("Edited", sam.id, "P1")
+    assert labelled.labels == ("emc",)
+    assert reopened.status == "In Progress"
+    assert done.status == "Done"
+    assert projects.get_project(conn, "OIL").archived is True
+
+
+# --- merged persons (DM-23, OP-31) ----------------------------------------------------------------------
+
+
+def test_assigning_a_merged_person_stores_the_survivor_and_records_it(
+    conn: sqlalchemy.Connection, me, oil
+) -> None:
+    duplicate = people.create_person(conn, "Sam")
+    survivor = people.create_person(conn, "Samuel Smith")
+    people.merge_persons(conn, duplicate.id, survivor.id, actor_id=me.id)
+    issue = make(conn, me)
+
+    updated = issues.update_issue(conn, issue.key, {"assignee_id": duplicate.id}, actor_id=me.id)
+
+    assert updated.assignee_id == survivor.id
+    assert events(conn, updated)[1:] == [("assignee", "set", None, str(survivor.id))]
+
+
+def test_assigning_a_person_merged_twice_stores_the_end_of_the_chain(
+    conn: sqlalchemy.Connection, me, oil
+) -> None:
+    first = people.create_person(conn, "S.")
+    second = people.create_person(conn, "Sam")
+    survivor = people.create_person(conn, "Samuel Smith")
+    people.merge_persons(conn, first.id, second.id, actor_id=me.id)
+    people.merge_persons(conn, second.id, survivor.id, actor_id=me.id)
+    issue = make(conn, me)
+
+    updated = issues.update_issue(conn, issue.key, {"assignee_id": first.id}, actor_id=me.id)
+
+    assert updated.assignee_id == survivor.id
+    assert events(conn, updated)[1:] == [("assignee", "set", None, str(survivor.id))]
+
+
+def test_assigning_the_survivor_after_a_redirect_is_a_noop(conn: sqlalchemy.Connection, me, oil) -> None:
+    duplicate = people.create_person(conn, "Sam")
+    survivor = people.create_person(conn, "Samuel Smith")
+    issue = make(conn, me, assignee_id=survivor.id)
+    people.merge_persons(conn, duplicate.id, survivor.id, actor_id=me.id)
+    sets = change_set_count(conn)
+
+    issues.update_issue(conn, issue.key, {"assignee_id": duplicate.id}, actor_id=me.id)
+
+    assert change_set_count(conn) == sets
+
+
+def test_create_redirects_assignee_and_reporter_to_the_survivor(conn: sqlalchemy.Connection, me, oil) -> None:
+    duplicate = people.create_person(conn, "Sam")
+    survivor = people.create_person(conn, "Samuel Smith")
+    people.merge_persons(conn, duplicate.id, survivor.id, actor_id=me.id)
+
+    issue = make(conn, me, assignee_id=duplicate.id, reporter_id=duplicate.id)
+
+    assert (issue.assignee_id, issue.reporter_id) == (survivor.id, survivor.id)
+
+
+def test_update_redirects_the_reporter_to_the_survivor(conn: sqlalchemy.Connection, me, oil) -> None:
+    duplicate = people.create_person(conn, "Sam")
+    survivor = people.create_person(conn, "Samuel Smith")
+    people.merge_persons(conn, duplicate.id, survivor.id, actor_id=me.id)
+    issue = make(conn, me)
+
+    updated = issues.update_issue(conn, issue.key, {"reporter_id": duplicate.id}, actor_id=me.id)
+
+    assert updated.reporter_id == survivor.id
+    assert events(conn, updated)[1:] == [("reporter", "set", str(me.id), str(survivor.id))]

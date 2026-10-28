@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from ai_oil.domain import projects
+from ai_oil.domain import issues, people, projects
 from ai_oil.governance import audit
 
 ERROR_PREFIX = '<div class="error" role="alert">'
@@ -209,6 +209,56 @@ def test_archiving_and_unarchiving_a_project(app: FastAPI, client: TestClient, p
         ("OLD", {"archived": False, "via": "web"}),
     ]
     assert {(e.action_class, e.actor_type) for e in entries} == {("B", "user")}
+
+
+def test_archiving_a_project_with_open_issues_shows_the_refusal_and_changes_nothing(
+    app: FastAPI, post
+) -> None:
+    response = post("/projects/OIL/archive", {"archived": "1"})
+
+    assert response.status_code == 422
+    assert ERROR_PREFIX in response.text
+    assert (
+        "project OIL cannot be archived: 3 issues are not Done or Cancelled: OIL-1, OIL-2, OIL-3"
+        in response.text
+    )
+    assert audit_entries(app, "project.update") == []
+    with app.state.engine.begin() as conn:
+        assert projects.get_project(conn, "OIL").archived is False
+
+
+def test_archiving_a_project_whose_issues_are_all_done_works(app: FastAPI, post) -> None:
+    with app.state.engine.begin() as conn:
+        me = people.get_me(conn)
+        for key in ("OIL-1", "OIL-2", "OIL-3"):
+            issues.transition_issue(conn, key, "Done", actor_id=me.id)
+
+    response = post("/projects/OIL/archive", {"archived": "1"})
+
+    assert response.status_code == 303
+    with app.state.engine.begin() as conn:
+        assert projects.get_project(conn, "OIL").archived is True
+
+
+def test_unarchiving_a_project_with_open_issues_works(app: FastAPI, post) -> None:
+    response = post("/projects/OLD/archive", {"archived": "0"})
+
+    assert response.status_code == 303
+    with app.state.engine.begin() as conn:
+        assert projects.get_project(conn, "OLD").archived is False
+
+
+def test_an_issue_of_an_archived_project_can_still_be_edited_and_reopened(app: FastAPI, post) -> None:
+    with app.state.engine.begin() as conn:
+        issues.transition_issue(conn, "OLD-1", "Done", actor_id=people.get_me(conn).id)
+
+    edited = post("/issues/OLD-1/field/summary", {"value": "Renamed"})
+    reopened = post("/issues/OLD-1/transition", {"value": "In Progress"})
+
+    assert edited.status_code == 200 and reopened.status_code == 200
+    with app.state.engine.begin() as conn:
+        issue = issues.get_issue(conn, "OLD-1")
+    assert (issue.summary, issue.status) == ("Renamed", "In Progress")
 
 
 @pytest.mark.parametrize(

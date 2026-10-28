@@ -329,6 +329,9 @@ def field_save(
     after = issues.update_issue(conn, key, changes, actor_id=me.id)
     if after != before:
         detail: dict[str, object] = {field: value.strip() or None, "via": "web"}
+        if field in ("assignee", "reporter"):
+            stored = getattr(after, DOMAIN_FIELDS[field])
+            detail[field] = None if stored is None else str(stored)
         audit.log(conn, "issue.edit", "B", actor_type="user", target=before.key, detail=detail)
     if field in MAIN_FIELDS:
         return render(request, "issue/_view.html", {**_context(conn, after), "field": field})

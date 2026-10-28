@@ -4,14 +4,17 @@ import re
 from dataclasses import dataclass
 
 import sqlalchemy
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
+from ai_oil.domain import people
 from ai_oil.errors import ConflictError, NotFoundError, ValidationError
 from ai_oil.timeutil import utcnow_iso
 
 _KEY_PATTERN = re.compile(r"[A-Z][A-Z0-9]{1,9}")
 _PROJECT_COLUMNS = "id, key, name, description, lead_id, next_number, archived"
 _COMPONENT_COLUMNS = "id, project_id, name, description, archived"
+_CLOSED_STATUSES = ("Done", "Cancelled")
+_ARCHIVE_KEYS_SHOWN = 10
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,8 @@ def create_project(
         raise ValidationError("project name must not be blank")
     if conn.execute(text("SELECT 1 FROM project WHERE key = :key"), {"key": key}).first() is not None:
         raise ConflictError(f"project {key} already exists")
+    if lead_id is not None:
+        lead_id = people.surviving_person(conn, lead_id).id
     conn.execute(
         text(
             "INSERT INTO project (key, name, description, lead_id, created_at)"
@@ -123,6 +128,26 @@ def list_projects(conn: sqlalchemy.Connection, *, include_archived: bool = False
     return [_project(row) for row in rows]
 
 
+def _check_archivable(conn: sqlalchemy.Connection, project: Project) -> None:
+    """Refuse archiving while any issue of the project is not Done or Cancelled (DM-1)."""
+    open_keys = list(
+        conn.execute(
+            text(
+                "SELECT key FROM issue WHERE project_id = :project_id AND status NOT IN :closed"
+                " ORDER BY number"
+            ).bindparams(bindparam("closed", expanding=True)),
+            {"project_id": project.id, "closed": list(_CLOSED_STATUSES)},
+        ).scalars()
+    )
+    if not open_keys:
+        return
+    shown = ", ".join(open_keys[:_ARCHIVE_KEYS_SHOWN])
+    if len(open_keys) > _ARCHIVE_KEYS_SHOWN:
+        shown += f" and {len(open_keys) - _ARCHIVE_KEYS_SHOWN} more"
+    count = "1 issue is" if len(open_keys) == 1 else f"{len(open_keys)} issues are"
+    raise ValidationError(f"project {project.key} cannot be archived: {count} not Done or Cancelled: {shown}")
+
+
 def update_project(
     conn: sqlalchemy.Connection,
     key: str,
@@ -132,8 +157,13 @@ def update_project(
     lead_id: int | None = None,
     archived: bool | None = None,
 ) -> Project:
-    """Change the given fields only; the key itself cannot be changed (DM-1)."""
+    """Change the given fields only; the key itself cannot be changed (DM-1, DM-23).
+
+    Archiving is refused while an issue is not Done or Cancelled; unarchiving is always allowed.
+    """
     project = get_project(conn, key)
+    if archived and not project.archived:
+        _check_archivable(conn, project)
     changes: dict[str, object] = {}
     if name is not None:
         name = name.strip()
@@ -143,7 +173,7 @@ def update_project(
     if description is not None:
         changes["description"] = description
     if lead_id is not None:
-        changes["lead_id"] = lead_id
+        changes["lead_id"] = people.surviving_person(conn, lead_id).id
     if archived is not None:
         changes["archived"] = int(archived)
     if changes:

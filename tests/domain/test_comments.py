@@ -85,6 +85,17 @@ def test_add_stores_the_author_as_actor(conn: sqlalchemy.Connection, me, issue) 
     assert comments.list_comments(conn, issue.key)[0].author_id == sam.id
 
 
+def test_add_redirects_a_merged_author_to_the_survivor(conn: sqlalchemy.Connection, me, issue) -> None:
+    duplicate = people.create_person(conn, "Sam")
+    survivor = people.create_person(conn, "Samuel Smith")
+    people.merge_persons(conn, duplicate.id, survivor.id, actor_id=me.id)
+
+    comment = comments.add_comment(conn, issue.key, "From Sam", author_id=duplicate.id)
+
+    assert comment.author_id == survivor.id
+    assert history.issue_history(conn, issue.id)[1].actor_id == survivor.id
+
+
 def test_add_with_proposal_id(conn: sqlalchemy.Connection, me, issue) -> None:
     conn.execute(
         text(
