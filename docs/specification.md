@@ -4,8 +4,8 @@
 
 | | |
 |---|---|
-| **Version** | 0.4 — phases 1 and 2 implemented |
-| **Date** | 27 October 2026 |
+| **Version** | 0.5 — phases 1 and 2 implemented |
+| **Date** | 28 October 2026 |
 | **Owner** | Alex Hultsch |
 | **Basis** | Requirements interview of 26 October 2026 (Appendix A); implementation decisions of 27 October 2026 (Appendix C) |
 | **Executable data model** | [`src/ai_oil/db/sql/0001_baseline.sql`](../src/ai_oil/db/sql/0001_baseline.sql) — authoritative where it and chapter 5 differ |
@@ -30,7 +30,7 @@ Every requirement has an ID such as `DM-12`. Code, commits and tests refer to th
 | `UI` | Web interface (phase 2) |
 | `AI` | AI enrichment (phase 3) |
 | `AST` | AI assistant (phase 4) |
-| `WB` | Write-back and dashboards (phase 5) |
+| `WB` | Dashboards (phase 5); write-back dropped (OP-47) |
 | `GOV` | Governance |
 | `NFR` | Non-functional requirements |
 
@@ -77,7 +77,7 @@ AI_OIL is a deliberately simplified Jira. **Each issue carries a dictionary of l
 | **P2** | Web interface | Jira-like local web app: issue navigator with OQL and saved filters, issue detail page, inline edits, comments, history, source panel with refresh and version diff | none |
 | **P3** | AI enrichment | LLM provider abstraction, summaries per source and per issue, extraction of action items, open questions, decisions and risks, link suggestions, import inbox for new issues, field-change proposals, proposal review UI | yes |
 | **P4** | AI assistant | "My Inbox" (waiting on me, due, overdue, blocked, stale), daily briefing, unlinked-email detection, Jira mentions and assignments | yes |
-| **P5** | Write-back and dashboards | Approval tokens, Jira comment/transition, Outlook draft creation, dashboards (server-side SVG) | yes |
+| **P5** | Dashboards | Dashboards (server-side SVG). No write-back to external systems in any phase (decided 28 October 2026, OP-47) | no |
 
 **Exit criteria**
 
@@ -87,7 +87,7 @@ AI_OIL is a deliberately simplified Jira. **Each issue carries a dictionary of l
 | P2 | All P1 operations are possible in the browser. P1 acceptance repeated without the CLI |
 | P3 | For 20 real issues: the summary is correct in the user's judgement, every AI item shows its evidence, and no field was changed without approval |
 | P4 | For two weeks of real use, the morning briefing and "My Inbox" contain no item the user considers wrong more than once a day |
-| P5 | One Jira comment and one Outlook draft created through approval, each with an audit entry and a used token |
+| P5 | The dashboard gadgets of WB-4 are drawn from saved filters on real data (decided 28 October 2026, OP-47) |
 
 **P1 has no LLM calls.** It is independent of the open provider decision (OI-3) and can start immediately.
 
@@ -98,7 +98,7 @@ AI_OIL is a deliberately simplified Jira. **Each issue carries a dictionary of l
 | ID | Principle | Practical consequence |
 |---|---|---|
 | AP-1 | **Deterministic before AI** | Fetching, hashing, diffing, deduplication, date arithmetic, sorting, search and "did I reply?" are plain code. The LLM does language understanding, classification and text generation only |
-| AP-2 | **Pull on demand** | No background polling, no scheduler. Every sync, scan and AI run starts from a user action (CLI command or button). Opening the app may trigger the daily briefing because opening is a user action |
+| AP-2 | **Pull on demand** | No background polling, no scheduler. Every sync, scan and AI run starts from a user action (CLI command or button). The daily briefing is generated on demand only (decided 28 October 2026, OP-45) |
 | AP-3 | **Store everything, versioned** | Each fetched state is kept as an immutable version or entry. Nothing fetched is ever overwritten. Storage is cheap; lost context is not |
 | AP-4 | **Source-agnostic core** | The core knows four concepts only: *source object*, *version*, *entry* and *link*. Everything source-specific lives in a connector plugin |
 | AP-5 | **Propose, do not execute** | AI output is either a clearly labelled AI artefact (summary, extracted item) or a proposal. Official issue fields change only when the user accepts a proposal |
@@ -116,12 +116,12 @@ AI_OIL is a deliberately simplified Jira. **Each issue carries a dictionary of l
 
 ```mermaid
 flowchart LR
-    subgraph Sources["Source systems (read-only until P5)"]
+    subgraph Sources["Source systems (read-only)"]
         OL[Outlook classic<br/>COM]
         JI[Jira Cloud<br/>REST v3]
         CF[Confluence Cloud<br/>REST v2]
         SP[SharePoint / OneDrive<br/>synced folder]
-        TM[Teams<br/>bridge, P5]
+        TM[Teams<br/>bridge]
     end
     subgraph App["AI_OIL (Python, one process)"]
         CR[Connector registry<br/>+ plugins]
@@ -238,7 +238,7 @@ erDiagram
 | DM-20 | A `person` is any human the system knows: the user, colleagues, suppliers and customers. Exactly one person has `is_me = 1` |
 | DM-21 | A `person_identity` is one way the person appears in a system: `email` (lower-case SMTP address), `atlassian` (accountId, shared by Jira and Confluence Cloud) or `teams`. `(system, external_id)` is unique |
 | DM-22 | When the sync engine meets an unknown identity, it creates a person with that identity automatically (actor `sync`). Exchange-internal addresses (`/o=ExchangeLabs/...`) are resolved to SMTP before matching |
-| DM-23 | Two persons that turn out to be the same are merged: `merged_into_id` points at the survivor and all references are re-pointed. Merging is a user action and is recorded in history |
+| DM-23 | Two persons that turn out to be the same are merged: `merged_into_id` points at the survivor and all references are re-pointed. Merging is a user action and is recorded in history. Assigning an issue to a merged person, or setting the reporter or any other person reference to one, is redirected to the surviving person, following the merge chain (decided 28 October 2026, OP-31) |
 
 **`person`**
 
@@ -257,7 +257,7 @@ erDiagram
 
 | ID | Requirement |
 |---|---|
-| DM-1 | A `project` has a unique key of 2–10 characters (`[A-Z][A-Z0-9]*`), a name, an optional description and lead, and an `archived` flag. The key cannot be changed once an issue exists |
+| DM-1 | A `project` has a unique key of 2–10 characters (`[A-Z][A-Z0-9]*`), a name, an optional description and lead, and an `archived` flag. The key cannot be changed once an issue exists. Archiving is refused while any issue of the project is not Done or Cancelled; the error lists those issue keys. An archived project accepts no new issues, and its existing issues stay editable and can be reopened (decided 28 October 2026, OP-30) |
 | DM-2 | `project.next_number` is the high-water mark of issue numbers. Numbers are allocated inside the issue-creation transaction and are never reused, not even after deletion |
 | DM-3 | A `component` belongs to one project and is a fixed topic area within it. An issue can have several components of its own project |
 | DM-4 | A `label` is a global, case-insensitive tag without spaces or commas. An issue can have any number of labels |
@@ -437,7 +437,7 @@ This is the core of the product. Four concepts carry every source type:
 | DM-45 | `cursor` holds the connector's change marker: the last message time and anchor EntryID for email, `fields.updated` for Jira, `version.number` for Confluence, or `mtime` + sha256 for a file. The sync engine compares it before fetching content |
 | DM-46 | `fetch_status` is `pending`, `ok`, `error` (with `fetch_error`), `gone` (deleted or no longer accessible in the source) or `skipped` (connector disabled). A `gone` object keeps all its stored versions |
 
-`object_type` values: `email_thread`, `attachment`, `jira_issue`, `confluence_page`, `file`, `teams_thread` (P5), `note` (manual text), `web_link` (any URL, metadata only).
+`object_type` values: `email_thread`, `attachment`, `jira_issue`, `confluence_page`, `file`, `teams_thread` (planned before P3, OP-49), `note` (manual text), `web_link` (any URL, metadata only).
 
 #### 5.11.3 `source_version`
 
@@ -482,7 +482,7 @@ Raw originals are stored gzip-compressed under `blobs/<first two hex chars>/<sha
 | SharePoint / OneDrive file | `file` | Absolute local path | Extracted text per content change | — | — | mtime + sha256 |
 | Manual note | `note` | Generated UUID | Note text; each edit is a version | — | — | hash |
 | Web link | `web_link` | Normalised URL | *(none; metadata only)* | — | — | — |
-| Teams chat (P5) | `teams_thread` | Chat/thread id | — | `teams_message` | — | last message time |
+| Teams chat (before P3, OP-49) | `teams_thread` | Chat/thread id | — | `teams_message` | — | last message time |
 
 ### 5.12 Sync runs
 
@@ -498,7 +498,7 @@ Raw originals are stored gzip-compressed under `blobs/<first two hex chars>/<sha
 | `model_call` | One row per LLM call: purpose, provider, model, prompt version, tokens, duration, status | AI-2 |
 | `ai_summary` | Current and superseded summaries per source object and per issue | Only one current summary per scope. `basis_json` records the highest version and entry ids it covers, which drives delta processing (AP-7) |
 | `extracted_item` | `action_item`, `open_question`, `decision` and `risk` found in sources | Has an owner person, `directed_at_me`, a due date and a state (`open`, `resolved`, `dismissed`, `superseded`). `resolved_by_entry_id` points to, e.g., my reply. `issue_id` may be empty for unlinked mail (AST-6) |
-| `proposal` | Everything the AI wants to change: `new_issue`, `link_source`, `field_change`, `comment`, `external_action` (P5) | Per-item decision (`accepted`, `accepted_edited`, `rejected`). A `dedup_key` stops a rejected proposal from coming back |
+| `proposal` | Everything the AI wants to change: `new_issue`, `link_source`, `field_change`, `comment`, `external_action` (unused, OP-47) | Per-item decision (`accepted`, `accepted_edited`, `rejected`). A `dedup_key` stops a rejected proposal from coming back |
 | `evidence` | Links any summary, extracted item or proposal to the exact version or entry, with an optional quote | Exactly one of version or entry per row |
 
 ### 5.14 Governance tables
@@ -506,7 +506,7 @@ Raw originals are stored gzip-compressed under `blobs/<first two hex chars>/<sha
 | Table | Purpose |
 |---|---|
 | `audit_log` | Append-only (enforced by triggers). Every class B–E action (13.2), every source fetch, every model call and every proposal decision |
-| `approval` (P5) | Single-use token for a class C–E action, bound to class, target and a hash of exactly the payload that was shown |
+| `approval` (unused, OP-47) | Single-use token for a class C–E action, bound to class, target and a hash of exactly the payload that was shown |
 
 ### 5.15 Search tables
 
@@ -539,7 +539,7 @@ Connectors are Python plugins registered through a `ai_oil.connectors` entry poi
 class Connector(Protocol):
     type: ClassVar[str]                    # 'outlook', 'jira', ...
     object_types: ClassVar[set[str]]       # what it can produce
-    action_class: ClassVar[str] = "A"      # read-only until P5 (GOV-9)
+    action_class: ClassVar[str] = "A"      # read-only in all phases (GOV-9, OP-47)
 
     def check(self) -> HealthReport: ...
     def parse_reference(self, text: str) -> SourceRef | None: ...
@@ -558,7 +558,7 @@ class Connector(Protocol):
 
 | ID | Requirement |
 |---|---|
-| CON-1 | Connectors are read-only until P5. Any write method must declare its action class and goes through governance (GOV-6) |
+| CON-1 | Connectors are read-only in all phases (decided 28 October 2026, OP-47). Any write method must declare its action class and goes through governance (GOV-6) |
 | CON-2 | Connectors return normalised data (plain text, UTC timestamps, identities as `(system, external_id)`). Hashing, versioning and storage are done by the sync engine, not the connector |
 | CON-3 | A connector failure affects only its own objects (AP-10) |
 | CON-4 | Connectors can be enabled and disabled individually in configuration and in the UI. A disabled connector's objects are reported as `skipped`, not as errors |
@@ -631,9 +631,9 @@ class Connector(Protocol):
 
 Text is capped at `max_text_chars` (default 2,000,000) per version, and truncation is flagged in metadata.
 
-### 6.8 Teams connector (deferred)
+### 6.8 Teams connector (planned before P3, OP-49)
 
-Not built in the current plan (decision of 27 October 2026). Through the same plugin interface. The expected route is a Power Automate flow that writes channel and chat messages into a synced file, because direct Graph access needs an IT app registration. Design it when P5 starts.
+Built next, before P3, as the sixth connector through the same plugin interface (decided 28 October 2026, OP-49). Direct Graph access needs an IT app registration, so a new Power Automate flow under the user's account writes Teams messages into an Excel table in the user's own OneDrive, and the connector reads the synced local copy. Details: `docs/teams_bridge_concept.md`.
 
 ---
 
@@ -716,7 +716,7 @@ order      := field ["ASC" | "DESC"]
 | SRCH-8 | Saved filters store a name, the OQL text and a column set. Some filters ship built-in: *My open issues*, *Overdue*, *Blocked*, *Updated by sources in the last 24 h*, *Due this week* |
 | SRCH-9 | Performance: < 300 ms for any OQL query without `text ~`, and < 1 s with it, at 1,000 issues and 100,000 entries |
 
-Semantic (embedding) search is not part of the plan. It can be added in P5 if keyword search proves insufficient (OI-10).
+Semantic (embedding) search is not part of the plan. It is considered only if keyword search proves insufficient after P4 (OI-10, OP-33).
 
 ---
 
@@ -826,7 +826,7 @@ The CLI is the only interface in P1 and remains available afterwards for scripti
 | AI-17 | AI summaries and extracted items are shown in their own "AI" section on the issue page, visibly labelled, and never mixed into official fields |
 | AI-18 | Extracted items can be confirmed, dismissed or converted into a sub-task or comment (both conversions are user actions) |
 | AI-19 | An AI run is on demand: *Analyse this issue*, *Analyse all changed*, *Scan for new issues*. By default it runs on the objects changed in the last sync |
-| AI-20 | Token usage per run is shown and a configurable budget per run is enforced. A run over budget stops and says so |
+| AI-20 | Token usage per run is shown and a configurable budget per run is enforced. The default budget is 50 model calls per run. Before exceeding it, the run asks the user to continue (a confirmation in the browser, a prompt on the CLI); without consent it stops and reports what is left (decided 28 October 2026, OP-43) |
 
 ---
 
@@ -840,7 +840,7 @@ The CLI is the only interface in P1 and remains available afterwards for scripti
 | AST-4 | **Due today and overdue:** issues not Done with `revised_due_date ≤ today`, assigned to me or reported by me |
 | AST-5 | **Stale:** issues not Done with no activity (field change, comment or source change) for more working days than the priority number (5.7) |
 | AST-6 | **Unlinked email:** the mailbox scan (CON-26) includes conversations that are not linked to any issue. Questions to me in them appear in *Waiting on me* with the actions *Link to issue…*, *Create issue*, *Dismiss* |
-| AST-7 | **Daily briefing:** generated when the app is opened for the first time on a working day, or with a button (AP-2). It contains a short narrative plus links: what is due, what is overdue, who waits for me (oldest first), what changed in my issues since yesterday, and proposals pending. It is stored in `briefing` and is not regenerated the same day unless requested |
+| AST-7 | **Daily briefing:** generated only on demand, with a "Briefing" button in the browser or a CLI command, never automatically when the app opens (AP-2; decided 28 October 2026, OP-45). It contains a short narrative plus links: what is due, what is overdue, who waits for me (oldest first), what changed in my issues since yesterday, and proposals pending. It is stored in `briefing` and is not regenerated the same day unless requested again |
 | AST-8 | Every item in My Inbox and the briefing links to the issue and to the evidence |
 | AST-9 | Items show their age ("waiting 4 working days"). Working days are Mon–Fri |
 | AST-10 | Snooze: an issue or extracted item can be hidden from My Inbox until a date (`snoozed_until`). Snoozing an issue is a field change and appears in its history |
@@ -873,19 +873,21 @@ The CLI is the only interface in P1 and remains available afterwards for scripti
 | D – Communication | Sending an email or a Teams message | token, per message |
 | E – External and sensitive | Anything to a configured customer domain | token + separate confidentiality confirmation |
 
-Classes C–E do not exist before P5.
+Classes C–E are not used: no phase writes to an external system (decided 28 October 2026, OP-47).
 
 ---
 
-## 14. Write-back and dashboards (P5)
+## 14. Dashboards (P5)
+
+Write-back to external systems was dropped on 28 October 2026 (OP-47); WB-1 to WB-4 keep their IDs but are no longer planned. AI_OIL only reads external systems.
 
 | ID | Requirement |
 |---|---|
-| WB-1 | Write-back is always an `external_action` proposal (class C–E), shown with a full preview, and executed only with a token (GOV-6) |
-| WB-2 | First write actions: add a Jira comment, transition a Jira issue, create an Outlook **draft** (never send directly), add a Confluence comment |
-| WB-3 | Reminder drafting: the AI drafts a reminder for an item in *Waiting on others* (Blocked issues), and the user approves the draft before it is saved to Outlook Drafts |
+| WB-1 | **Dropped (OP-47).** Write-back is always an `external_action` proposal (class C–E), shown with a full preview, and executed only with a token (GOV-6) |
+| WB-2 | **Dropped (OP-47).** First write actions: add a Jira comment, transition a Jira issue, create an Outlook **draft** (never send directly), add a Confluence comment |
+| WB-3 | **Dropped (OP-47).** Reminder drafting: the AI drafts a reminder for an item in *Waiting on others* (Blocked issues), and the user approves the draft before it is saved to Outlook Drafts |
 | WB-4 | Dashboards, drawn as server-side inline SVG (no chart library, no CDN): issues by status and project, overdue trend, created vs resolved per week, aging of open issues, "waiting on me" count over time. Gadgets are based on saved filters, as in Jira |
-| WB-5 | Teams chat connector (6.8) — deferred, not in the current plan |
+| WB-5 | **Moved: built before P3 (OP-49).** Teams chat connector (6.8) |
 
 ---
 
@@ -919,7 +921,7 @@ Classes C–E do not exist before P5.
 | OI-7 | Should Done issues keep syncing for a grace period (to catch late replies)? | P1 | **Decided:** Yes, 14 days after `resolved_at` |
 | OI-8 | Keep raw SharePoint files in the blob store as well? | P1 | **Decided:** No (SharePoint has version history). Text only |
 | OI-9 | Spike: reliability of `GetConversation()` across folders in cached Exchange mode on the target laptop | P1, first week | Spike before building CON-22 |
-| OI-10 | Semantic search with embeddings | P5 | **Decided:** Only if keyword search proves insufficient |
+| OI-10 | Semantic search with embeddings | after P4 | **Decided:** Only if keyword search proves insufficient after P4 (OP-33) |
 
 ---
 
@@ -1004,7 +1006,7 @@ Classes C–E do not exist before P5.
 | 1 | Cancelled | Sixth status, terminal (category Done), reachable from every open status, mandatory `cancel_reason`, reopen to In Progress. The `resolution` field is removed; duplicates are expressed with the `duplicates` issue link |
 | 2 | LLM adapter | OpenCode CLI adapter (AI-1) with the company-internal model, plus a deterministic fake for tests |
 | 3 | Connector verification | Recorded fixtures behind injectable interfaces (CON-6), plus `oil connector check --live` for the target laptop |
-| 4 | Teams chat | Deferred, not in the current plan |
+| 4 | Teams chat | Deferred, not in the current plan — superseded 28 October 2026: built before P3 (OP-49) |
 | 5 | Dashboard charts | Server-side inline SVG |
 | 6 | Open items OI-2, OI-4 to OI-8, OI-10 | The proposals in chapter 16 are adopted |
 | 7 | Search index | Maintained by SQLite triggers (migration 0002), not by application code; document rowid = kind code × 10¹² + row id |

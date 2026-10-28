@@ -12,7 +12,7 @@ Single user, local on a Windows laptop, Python, SQLite.
 
 | Document | Content |
 |---|---|
-| [`docs/specification.md`](docs/specification.md) | The specification (v0.4). Chapter 9 lists every CLI command |
+| [`docs/specification.md`](docs/specification.md) | The specification (v0.5). Chapter 9 lists every CLI command |
 | [`src/ai_oil/db/sql/0001_baseline.sql`](src/ai_oil/db/sql/0001_baseline.sql) | The data model as an executable SQLite schema |
 | [`docs/implementation_plan.md`](docs/implementation_plan.md) | Conventions, work order and status |
 | [`docs/install_windows.md`](docs/install_windows.md) | Installation, first run and updates on the Windows laptop |
@@ -26,4 +26,4 @@ Single user, local on a Windows laptop, Python, SQLite.
 | P2 | Jira-like local web interface |
 | P3 | AI enrichment: summaries, extraction, link suggestions, import inbox, proposals to approve |
 | P4 | AI assistant: My Inbox, daily briefing, "waiting on me" |
-| P5 | Write-back with per-action approval, dashboards, Teams connector |
+| P5 | Dashboards. No write-back to external systems; the Teams connector is built before P3 |

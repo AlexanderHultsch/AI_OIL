@@ -1,6 +1,6 @@
 # Implementation plan
 
-Work order for building AI_OIL against `docs/specification.md` v0.2. Each step is verified on its own before the next starts.
+Work order for building AI_OIL against `docs/specification.md` (currently v0.5). Each step is verified on its own before the next starts.
 
 ## Conventions (binding for every step)
 
@@ -87,6 +87,10 @@ Steps 5, 8, 13, 17 and 18 were split into sub-steps during execution (5a–c, 8a
 | I4 | Stages Jira/Confluence (URL normalisation, token, live lists) and SharePoint (OneDrive registry libraries) — done | `pytest tests/setup` |
 | I5 | Finish stage (live check, first project, summary), re-run behaviour — done | `pytest tests/setup && pytest` |
 | I6 | `install.bat`, `start.bat`, `update.bat`, `uninstall.bat` + static checks; install guide rewritten around them — done | `pytest tests/test_batch_files.py && pytest && ruff check` |
+| D1 | Owner decisions of 28 October 2026 recorded (open points, spec v0.5) — done | review |
+| D2 | Archive rule (OP-30) and merged-person redirect (OP-31) | pytest tests/domain tests/cli tests/web && pytest |
+| T1 | Teams bridge concept (docs/teams_bridge_concept.md), agreed with the owner | review |
+| T2 | Teams connector over the bridge (OP-49) | per step |
 | 27–31 | P3 AI enrichment | per step |
 | 32–33 | P4 assistant | per step |
-| 34–36 | P5 write-back and dashboards | per step |
+| 34–36 | P5 dashboards | per step |

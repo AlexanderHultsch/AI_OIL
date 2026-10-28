@@ -6,6 +6,7 @@ The single list of everything that is not done, not decided or known to be imper
 |---|---|
 | open | Nothing done yet |
 | decide | Needs a decision by Alex |
+| decided | Decided by Alex; to be built (step named in the row) |
 | accepted | Known limitation, deliberately left for now |
 | closed | Done; resolution noted |
 
@@ -62,12 +63,12 @@ Everything here was built and tested against recorded fixtures and simulated sys
 
 | ID | Question | Proposal | Status |
 |---|---|---|---|
-| OP-30 | May archived projects still receive new issues and labels? | No: creating an issue in an archived project is rejected; existing issues stay editable | decide |
-| OP-31 | May merged persons still be assigned (by id)? | No: assignment to a merged person is redirected to the surviving person | decide |
-| OP-32 | Custom fields per project (spec OI-6) | Not before a concrete need; then an `issue_field_value` table | decide (later) |
-| OP-33 | Semantic search with embeddings (spec OI-10) | Only if keyword search proves insufficient after P4 | decide (later) |
-| OP-34 | Outlook online archive, PST files and shared mailboxes (spec OI-2) | Today: Inbox + subfolders + Sent Items + extra folders. Revisit after OP-2 | decide (later) |
-| OP-39 | Which P1 operations stay CLI-only? Today: `oil init`, `oil connector add/set` (token entry), `oil restore` | Keep them CLI-only: setup, secrets and a destructive restore are deliberate one-off acts; everything else is in the browser | decide |
+| OP-30 | May archived projects still receive new issues and labels? | Decided 28 October 2026: archiving a project is refused while any of its issues is not Done or Cancelled; the error lists those issue keys. An archived project accepts no new issues. Its existing issues stay editable and can be reopened. To be built in step D2 | decided (step D2) |
+| OP-31 | May merged persons still be assigned (by id)? | Decided 28 October 2026: assigning (or setting reporter, or any person reference) to a merged person is redirected to the surviving person, following the merge chain. To be built in step D2 | decided (step D2) |
+| OP-32 | Custom fields per project (spec OI-6) | Decided 28 October 2026: not now; add custom fields when a concrete field is missing (then an `issue_field_value` table) | closed (revisit on need) |
+| OP-33 | Semantic search with embeddings (spec OI-10) | Decided 28 October 2026: only if keyword search proves insufficient after P4 | closed (revisit after P4) |
+| OP-34 | Outlook online archive, PST files and shared mailboxes (spec OI-2) | Decided 28 October 2026: keep today's scope (Inbox + subfolders + Sent Items + extra folders); decide after the Outlook test OP-2 | decide (after OP-2) |
+| OP-39 | Which P1 operations stay CLI-only? Today: `oil init`, `oil connector add/set` (token entry), `oil restore` | Decided 28 October 2026: `oil init`, `oil connector add/set` and `oil restore` stay CLI-only; `install.bat` / `oil setup` cover setup and token entry. Everything else is in the browser | closed |
 
 ## 4. Future phases
 
@@ -75,15 +76,15 @@ Everything here was built and tested against recorded fixtures and simulated sys
 |---|---|---|---|
 | OP-40 | P2 | Web interface (spec chapter 10) — steps 22–26c | closed (27 October 2026) |
 | OP-41 | P3 | OpenCode adapter contract on the target machine: does a headless `opencode run` hang without `--auto`? (as in Professional-Assistant OC-6) | open |
-| OP-42 | P3 | Model per task type and attestation of the company-internal model for program content | open |
-| OP-43 | P3 | Token budget per run (AI-20) and the fixed OpenCode overhead of about 8,000 input tokens per call | open |
-| OP-44 | P3 | Scan window and Jira/Confluence scope for the import inbox (spec OI-4, OI-5: decided defaults, revisit with real data) | open |
-| OP-45 | P4 | Daily briefing: "first open on a working day" needs a reliable definition when the UI stays open overnight | open |
-| OP-46 | P4 | Waiting-on-me for unlinked mail depends on OP-2 and the mailbox scan | open |
-| OP-47 | P5 | Approval tokens, write-back to Jira / Confluence / Outlook drafts (never send) | open |
-| OP-48 | P5 | Dashboards as server-side SVG | open |
-| OP-49 | P5 | Teams chat connector — deferred; needs the Power Automate bridge format first | open |
-| OP-50 | later | Team / multi-user operation (out of scope in all phases today) | open |
+| OP-42 | P3 | Model per task type and attestation of the company-internal model for program content. Decided 28 October 2026: one company model is approved for program content, for every task; per-task models remain possible through configuration. Still open: the model name (comes from the OP-41 test) | decided |
+| OP-43 | P3 | Token budget per run (AI-20) and the fixed OpenCode overhead of about 8,000 input tokens per call. Decided 28 October 2026: default budget 50 model calls per run; before exceeding it, the run asks the user to continue (a confirmation in the browser, a prompt on the CLI); without consent it stops and reports what is left | decided |
+| OP-44 | P3 | Scan window and Jira/Confluence scope for the import inbox (spec OI-4, OI-5). Decided 28 October 2026: keep the defaults — since the last scan; the first scan goes 14 days back | decided |
+| OP-45 | P4 | Daily briefing: "first open on a working day" needs a reliable definition when the UI stays open overnight. Decided 28 October 2026: the briefing is generated only on demand (a "Briefing" button in the browser, a CLI command), never automatically when the app opens | decided |
+| OP-46 | P4 | Waiting-on-me for unlinked mail depends on OP-2 and the mailbox scan. Decided 28 October 2026: "Waiting on me" includes unlinked emails, once OP-2 is confirmed | decided |
+| OP-47 | P5 | Approval tokens, write-back to Jira / Confluence / Outlook drafts (never send). Decided 28 October 2026: no write-back in any phase; AI_OIL only reads external systems. P5 becomes "Dashboards" only. Approval of AI proposals inside AI_OIL (P3) is unaffected | decided |
+| OP-48 | P5 | Dashboards as server-side SVG. Decided 28 October 2026: dashboards are decided in P5 | open (decided in P5) |
+| OP-49 | before P3 | Teams chat connector. Decided 28 October 2026: moves forward, built next before P3 as the sixth connector, through a new Power Automate flow that writes into an Excel table in a synced SharePoint/OneDrive library. A concept (`docs/teams_bridge_concept.md`) is written first and agreed with the owner | decided (step T1) |
+| OP-50 | later | Team / multi-user operation (out of scope in all phases today). Decided 28 October 2026: maybe later; keep in mind | open |
 
 ## 5. Spec open items (chapter 16) — status
 
@@ -94,8 +95,8 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OI-3 | OpenCode CLI with the company-internal model | closed |
 | OI-4 | Since last scan, first run 14 days; see OP-44 | closed (revisit) |
 | OI-5 | Configured list per connector (`projects`, `spaces`) | closed |
-| OI-6 | See OP-32 | decide (later) |
+| OI-6 | See OP-32 | closed (revisit on need) |
 | OI-7 | Done/Cancelled issues keep syncing 14 days | closed |
 | OI-8 | SharePoint: text only, no raw copy | closed |
 | OI-9 | See OP-2 | open |
-| OI-10 | See OP-33 | decide (later) |
+| OI-10 | See OP-33 | closed (revisit after P4) |
