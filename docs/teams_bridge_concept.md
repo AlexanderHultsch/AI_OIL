@@ -1,95 +1,82 @@
 # Teams bridge and Teams connector — concept
 
-**Status:** draft for agreement, 28 October 2026 (OP-49, steps T1–T2 of `docs/implementation_plan.md`).
+**Status:** agreed 29 October 2026 (OP-49), to be built as steps T1–T2 of `docs/implementation_plan.md`.
 **Guidance from:** the Professional-Assistant Teams bridge (its spec TM-1…TM-5 and interface checklist Block F). It is design guidance only; no code is shared.
 
 ## 1. Goal
 
-Teams messages become a sixth source next to Outlook, Jira, Confluence, SharePoint and manual notes. You link a Teams conversation to an issue the same way you link an email conversation. Sync pulls the newest messages into the issue, with versions, and full-text search finds them.
+Teams chats become a sixth source next to Outlook, Jira, Confluence, SharePoint and manual notes. You link a Teams chat to an issue the same way you link an email conversation. Sync checks every linked chat for new messages and pulls them into the issue, with versions, and full-text search finds them.
 
-## 2. Why a bridge
+## 2. Decisions (29 October 2026)
 
-Reading Teams directly needs Microsoft Graph, which needs an app registration by IT. A Power Automate flow runs under your own account with standard connectors, needs no IT involvement, and can write each message as a row into an Excel table. The sync client then puts that Excel file on disk, where AI_OIL reads it like any other local file. This is the route the Professional-Assistant project chose for the same reason.
+| # | Topic | Decision |
+|---|---|---|
+| 1 | What is captured | Every message that @-mentions you, and every chat message (1:1 and group chats). Channel posts only when they mention you |
+| 2 | Where the file lives | Your own OneDrive, next to the program folder: `Documents\AI_OIL-Teams\` beside `Documents\AI_OIL\` (not inside it) |
+| 3 | What you link | A whole chat or channel conversation, nothing finer. You link most of them by hand; from phase 3 the AI suggests links |
+| 4 | Sync vs. scan | Sync only updates what is linked. Looking through everything (the whole mailbox, all captured Teams chats) for new topics is a **separate** action, "Scan for new topics" (phase 3). Its proposals carry their source: accepting a new-issue proposal creates the issue with the email or chat linked; a link proposal links the conversation to an existing issue |
+
+## 3. Why a bridge
+
+Reading Teams directly needs Microsoft Graph, which needs an app registration by IT. A Power Automate flow runs under your own account with standard connectors, needs no IT involvement, and can write each message as a row into an Excel table. OneDrive then puts that Excel file on disk, where AI_OIL reads it like any other local file.
 
 ```mermaid
 flowchart LR
-  T[Teams] -->|trigger| F[Power Automate flow<br/>your account]
-  F -->|Add a row| X[Teams_Bridge.xlsx<br/>table TeamsMessages<br/>in your OneDrive]
+  T[Teams] -->|trigger| F[Power Automate flows<br/>your account]
+  F -->|Add a row| X[Teams_Bridge_2026.xlsx<br/>table TeamsMessages<br/>OneDrive Documents\AI_OIL-Teams]
   X -->|OneDrive sync| L[Local copy]
   L -->|read only| A[AI_OIL teams connector]
 ```
 
-## 3. Constraints
+## 4. Constraints
 
 | # | Constraint | Consequence |
 |---|---|---|
-| 1 | The flow captures nothing from before it was switched on | Older Teams discussions cannot be linked; switch the flow on as early as possible |
-| 2 | Only document libraries and OneDrive are synced to disk, not SharePoint lists | The target must be an Excel table in a file, never a list |
-| 3 | Power Automate writes to the online file; your laptop sees changes after the sync client catches up (normally under two minutes) | A message sent seconds ago may be missing from a sync; the next sync has it |
-| 4 | Every captured message ends up in the file, including 1:1 chats if they are captured | The file must sit in **your own OneDrive**, not in a team site, so nobody else can read it |
-| 5 | An Excel table that grows to tens of thousands of rows slows the flow's "Add a row" action | One file per year (`Teams_Bridge_2026.xlsx`); the connector reads all files matching the pattern |
-| 6 | The exact trigger names, the fields they deliver and whether replies fire them are only visible in the flow editor of your tenant | Step T1 ends with a short check in the editor (section 7) before the connector is built |
+| 1 | The flows capture nothing from before they were switched on | Older Teams discussions cannot be linked; switch the flows on as early as possible |
+| 2 | Only document libraries and OneDrive are synced to disk, not SharePoint lists | The target is an Excel table in a file, never a list |
+| 3 | Power Automate writes to the online file; the laptop sees changes after OneDrive catches up (normally under two minutes) | A message sent seconds ago may be missing from a sync; the next sync has it |
+| 4 | All your chats end up in the file | It sits in your own OneDrive, which nobody else can read |
+| 5 | An Excel table with tens of thousands of rows slows the flow's "Add a row" action | One file per year (`Teams_Bridge_2026.xlsx`, `Teams_Bridge_2027.xlsx`); AI_OIL reads every file matching `Teams_Bridge*.xlsx` |
+| 6 | Channel posts that do not mention you are not captured | A linked channel conversation shows only the posts that mention you; chats are complete |
+| 7 | The exact trigger names and fields are only visible in your tenant's flow editor | `docs/teams_bridge_setup.md` starts with a short check; if "any chat" is not offered by the chat trigger, we decide together before going on |
 
-## 4. What the flow captures
+## 5. The two flows
 
-Each kind of capture is a separate small flow, so one failing flow does not stop the others.
+| Flow | Trigger (Teams connector, standard) | Captures |
+|---|---|---|
+| A — Mentions | "When I am @mentioned" (chats and channels) | Every message that mentions you |
+| B — Chats | "When a new chat message is added", for any chat | Every message in your 1:1 and group chats |
 
-| Flow | Trigger (Teams connector, standard) | Captures | Recommended |
-|---|---|---|---|
-| A — Mentions | "When I am mentioned in a channel message" and the chat variant | Every message that @-mentions you, in any chat or channel | Yes, always |
-| B — Tracked channels | "When a new channel message is added", one per channel you choose | Every new post in the program's key channels | Yes, for 2–5 key channels |
-| C — Tracked group chats | "When a new chat message is added", one per chat you choose | Every message in chosen group chats (e.g. a supplier escalation chat) | If you work in such chats |
-| D — All 1:1 chats | — | Not proposed: high volume, mostly unrelated, private | No |
+A message that both mentions you and sits in a chat is written twice; AI_OIL stores it once.
 
-Replies inside channel threads are the open technical point: some triggers fire only for new top-level posts. Section 7 checks it; if replies are not delivered, flow B adds the reply trigger available in your tenant.
+## 6. The table AI_OIL expects
 
-## 5. The table AI_OIL expects
-
-File `Teams_Bridge_<year>.xlsx` in a folder of your OneDrive (proposal: `Documents\AI_OIL-Teams`), one formatted table named `TeamsMessages`, all columns text:
+File `Teams_Bridge_<year>.xlsx` in `Documents\AI_OIL-Teams\`, one formatted table named `TeamsMessages`, all columns text:
 
 | # | Column | Content | Required |
 |---|---|---|---|
 | 1 | `MessageId` | Teams message id; unique, used for deduplication | yes |
-| 2 | `ParentMessageId` | Id of the thread's first post for channel replies; empty for a top-level post or a chat message | no |
-| 3 | `ConversationId` | Chat id or channel id | yes |
-| 4 | `ConversationType` | `chat` or `channel` | yes |
-| 5 | `ConversationName` | Chat topic, or `Team / Channel` | no |
-| 6 | `Timestamp` | Message time, ISO 8601 with time zone (the flow's `createdDateTime`) | yes |
-| 7 | `SenderName` | Display name | yes |
-| 8 | `SenderEmail` | E-mail or UPN of the sender | no |
-| 9 | `Permalink` | Link to the message in Teams | no |
-| 10 | `Text` | Message body (HTML as delivered; AI_OIL converts it to text) | yes |
-| 11 | `Trigger` | `Mention`, `Channel` or `Chat` (which flow wrote it) | no |
+| 2 | `ConversationId` | Chat id, or channel id plus thread for channel posts | yes |
+| 3 | `ConversationType` | `chat` or `channel` | yes |
+| 4 | `ConversationName` | Chat topic or channel name, as far as the trigger delivers it | no |
+| 5 | `Timestamp` | Message time, ISO 8601 with time zone | yes |
+| 6 | `SenderName` | Display name | yes |
+| 7 | `SenderEmail` | E-mail or UPN of the sender | no |
+| 8 | `Permalink` | Link to the message in Teams | no |
+| 9 | `Text` | Message body (HTML as delivered; AI_OIL converts it to text) | yes |
+| 10 | `Trigger` | `Mention` or `Chat` (which flow wrote it) | no |
 
-The connector reads the columns by name, so their order does not matter. It ignores unknown columns and reports missing required ones. The same message written twice (two flows fire) is stored once, by `MessageId`.
+AI_OIL reads the columns by name, so their order does not matter; it ignores extra columns and reports missing required ones.
 
-## 6. How AI_OIL uses it
+## 7. How AI_OIL uses it
 
 | Topic | Design |
 |---|---|
-| Connector | `teams`, settings `folder` (the local OneDrive folder holding the bridge files), `file_pattern` (default `Teams_Bridge*.xlsx`), `table` (default `TeamsMessages`) |
-| What you link | A **channel thread** (a top-level post with its replies) or a **chat from a chosen message onward** (a chat runs for months, so the link is anchored at the message you pick and includes everything after it) |
-| How you link | Paste a Teams message link (Teams: "Copy link" on a message), or search captured messages by text in the link dialog, like the Outlook subject search |
-| Entries | Each message is a `teams_message` entry with sender, time and text; the version text is the thread in time order |
+| Connector | `teams`, settings `folder` (the local `AI_OIL-Teams` folder), `file_pattern` (default `Teams_Bridge*.xlsx`), `table` (default `TeamsMessages`) |
+| Source object | `teams_thread` = one conversation (`ConversationId`); entries are its messages (`teams_message`); the version text is the conversation in time order |
+| Linking | Paste a Teams message link (Teams: "Copy link" on any message in the chat), or search captured chats by name, participant or text in the link dialog, like the Outlook subject search |
 | People | `SenderEmail` resolves to the same person as their Outlook mail; the Teams identity is stored as well (`teams`) |
-| Sync | Reads the local copies only, never the network. A cloud-only placeholder file is reported (as for SharePoint, OP-7), and a OneDrive conflict copy of the bridge file is reported, not read |
-| Governance | Read-only, class A. AI_OIL never posts to Teams (OP-47: no write-back) |
-| Setup | A new `oil setup` stage "Teams": finds the bridge folder in OneDrive, checks the table and its columns, shows the newest captured message, and creates the connector |
-| Guide | `docs/teams_bridge_setup.md`: building the flows click by click, the column mapping and the end-to-end test |
-
-## 7. Check in the flow editor before building (end of T1)
-
-| # | Check | Why |
-|---|---|---|
-| 1 | Power Automate opens with your company tenant and lets you create an automated cloud flow | Licensing or policy may block it |
-| 2 | The Teams triggers from section 4 exist without a premium badge | Premium connectors need a licence |
-| 3 | "Add a row into a table" (Excel Online Business) is available | Writes the row |
-| 4 | Which fields the triggers deliver: message id, parent id, chat or channel id, time, sender e-mail, link, body | Decides how complete the table can be |
-| 5 | Whether channel replies fire flow B | Decides whether a reply trigger is needed |
-| 6 | One test message arrives in the local file within two minutes | Proves the whole chain |
-
-## 8. Questions for you
-
-1. **Capture scope:** flows A and B, plus C if you work in group chats. Do you agree, and which 2–5 channels and which group chats matter?
-2. **File location:** your own OneDrive, folder `Documents\AI_OIL-Teams`. Agreed?
-3. **Linking chats:** anchored at a chosen message and everything after it. Agreed?
+| Sync | Reads the local copies only, never the network. A cloud-only placeholder or a OneDrive conflict copy of a bridge file is reported, not read |
+| Scan for new topics | Phase 3: unlinked captured chats are one input of the separate scan (decision 4), next to the mailbox scan (CON-26) and Jira |
+| Governance | Read-only, class A. AI_OIL never posts to Teams (OP-47) |
+| Setup | A new `oil setup` stage "Teams": finds `AI_OIL-Teams` in OneDrive, checks the table and its columns, shows the newest captured message, creates the connector |

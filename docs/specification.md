@@ -633,7 +633,7 @@ Text is capped at `max_text_chars` (default 2,000,000) per version, and truncati
 
 ### 6.8 Teams connector (planned before P3, OP-49)
 
-Built next, before P3, as the sixth connector through the same plugin interface (decided 28 October 2026, OP-49). Direct Graph access needs an IT app registration, so a new Power Automate flow under the user's account writes Teams messages into an Excel table in the user's own OneDrive, and the connector reads the synced local copy. Details: `docs/teams_bridge_concept.md`.
+Built next, before P3, as the sixth connector through the same plugin interface (decided 28 October 2026, OP-49). Direct Graph access needs an IT app registration, so a new Power Automate flow under the user's account writes Teams messages into an Excel table in the user's own OneDrive, and the connector reads the synced local copy. It captures every @-mention and every chat message; whole conversations are linked (concept agreed 29 October 2026). Details: `docs/teams_bridge_concept.md`, flow setup: `docs/teams_bridge_setup.md`.
 
 ---
 
@@ -813,7 +813,7 @@ The CLI is the only interface in P1 and remains available afterwards for scripti
 | AI-9 | **Extraction:** action items (who, what, by when), open questions (asked by whom, of whom), decisions (what, by whom, when) and risks. Items are matched to persons by identity. `directed_at_me` is set when the addressee is me |
 | AI-10 | **Link suggestions:** for each issue, candidates are first gathered deterministically (FTS over unlinked stored content, connector `search_candidates` with the issue's keywords and people, issue keys mentioned in text, the same file hash at a new path, forked email conversations). The LLM then ranks them and gives a reason. Proposals above a configurable confidence go to review |
 | AI-11 | **Field-change proposals:** e.g. "status → Blocked, reason: supplier has not confirmed (mail of 24 Oct)", or "due date → 2026-12-01 per Jira HWDEV-1187". These come from the progress check against `acceptance_criteria` and linked evidence |
-| AI-12 | **Import inbox:** a scan of mail (CON-26) and Jira (assigned to me, mentioning me, or watched, updated since the last scan) yields `new_issue` proposals with pre-filled fields and the source as origin. Duplicates are checked first by exact source match, then by text similarity against open issues |
+| AI-12 | **Import inbox:** a scan of mail (CON-26) and Jira (assigned to me, mentioning me, or watched, updated since the last scan) yields `new_issue` proposals with pre-filled fields and the source as origin. Duplicates are checked first by exact source match, then by text similarity against open issues. The scan also covers unlinked Teams chats from the bridge (6.8). It is a separate action, never part of sync: sync only updates linked sources (SYNC-1). Each proposal keeps its source; accepting a new-issue proposal links that email or chat to the new issue, and a link proposal links it to an existing issue (decided 29 October 2026, OP-55) |
 
 ### 11.3 Review
 

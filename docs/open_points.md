@@ -26,6 +26,7 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OP-8 | Python 3.12, pip and PyPI access on the corporate laptop | No install, no tool | Run `install.bat`; if PyPI is blocked use the `wheels\` folder (install_windows.md, Offline installation) | open |
 | OP-9 | Performance with real data (NFR-3, SRCH-9) | Measured only with synthetic data | Note the duration lines of `oil sync` and `oil search` after a few weeks | open |
 | OP-54 | `install.bat` / `start.bat` / `update.bat` / `uninstall.bat` have only been checked statically | Batch behaviour on the real Windows shell (quoting, choice, reg query parsing, attrib +P) | First run on the laptop; send the console output if anything looks wrong | open |
+| OP-56 | Teams bridge flows in Power Automate (`docs/teams_bridge_setup.md`) | Triggers, fields and "any chat" could not be checked here; nothing is captured before the flows run | Do sections 0–4 of the setup guide; send one row of each kind | open |
 
 ## 2. Known limitations in the phase-1 code
 
@@ -83,7 +84,8 @@ Everything here was built and tested against recorded fixtures and simulated sys
 | OP-46 | P4 | Waiting-on-me for unlinked mail depends on OP-2 and the mailbox scan. Decided 28 October 2026: "Waiting on me" includes unlinked emails, once OP-2 is confirmed | decided |
 | OP-47 | P5 | Approval tokens, write-back to Jira / Confluence / Outlook drafts (never send). Decided 28 October 2026: no write-back in any phase; AI_OIL only reads external systems. P5 becomes "Dashboards" only. Approval of AI proposals inside AI_OIL (P3) is unaffected | decided |
 | OP-48 | P5 | Dashboards as server-side SVG. Decided 28 October 2026: dashboards are decided in P5 | open (decided in P5) |
-| OP-49 | before P3 | Teams chat connector. Decided 28 October 2026: moves forward, built next before P3 as the sixth connector, through a new Power Automate flow that writes into an Excel table in a synced SharePoint/OneDrive library. A concept (`docs/teams_bridge_concept.md`) is written first and agreed with the owner | decided (step T1) |
+| OP-49 | before P3 | Teams chat connector. Decided 28 October 2026: moves forward, built next before P3 as the sixth connector, through a new Power Automate flow that writes into an Excel table in a synced SharePoint/OneDrive library. Concept agreed 29 October 2026 (`docs/teams_bridge_concept.md`): all @-mentions and all chats captured into `Documents\AI_OIL-Teams` in OneDrive; whole conversations are linked; flows set up with `docs/teams_bridge_setup.md` | decided (step T2) |
+| OP-55 | P3 | Sync and scan are separate. Decided 29 October 2026: sync only updates linked sources; "Scan for new topics" is its own action over the whole mailbox, the unlinked Teams chats and Jira. Each proposal carries its source: an accepted new-issue proposal creates the issue with the email or chat linked; a link proposal links the conversation to an existing issue (AI-12, AI-19) | decided (P3) |
 | OP-50 | later | Team / multi-user operation (out of scope in all phases today). Decided 28 October 2026: maybe later; keep in mind | open |
 
 ## 5. Spec open items (chapter 16) — status
