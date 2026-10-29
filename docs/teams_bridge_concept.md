@@ -5,7 +5,7 @@
 
 ## 1. Goal
 
-Teams chats become a sixth source next to Outlook, Jira, Confluence, SharePoint and manual notes. You link a Teams chat to an issue the same way you link an email conversation. Sync checks every linked chat for new messages and pulls them into the issue, with versions, and full-text search finds them.
+Teams chats become a sixth source next to Outlook, Jira, Confluence, SharePoint and manual notes. You link a Teams chat to an issue the same way you link an email conversation. Sync checks every linked chat for new messages and pulls them into the issue as entries, and full-text search finds them.
 
 ## 2. Decisions (29 October 2026)
 
@@ -73,7 +73,7 @@ AI_OIL reads the columns by name, so their order does not matter; it ignores ext
 | Topic | Design |
 |---|---|
 | Connector | `teams`, settings `folder` (the local `AI_OIL-Teams` folder), `file_pattern` (default `Teams_Bridge*.xlsx`), `table` (default `TeamsMessages`) |
-| Source object | `teams_thread` = one conversation (`ConversationId`); entries are its messages (`teams_message`); the version text is the conversation in time order |
+| Source object | `teams_thread` = one conversation (`ConversationId`); entries are its messages (`teams_message`), as for email conversations; there is no separate version text |
 | Linking | Paste a Teams message link (Teams: "Copy link" on any message in the chat), or search captured chats by name, participant or text in the link dialog, like the Outlook subject search |
 | People | `SenderEmail` resolves to the same person as their Outlook mail; the Teams identity is stored as well (`teams`) |
 | Sync | Reads the local copies only, never the network. A cloud-only placeholder or a OneDrive conflict copy of a bridge file is reported, not read |

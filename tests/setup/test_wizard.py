@@ -60,6 +60,7 @@ def test_the_real_stages_in_their_order() -> None:
         ("network", "Network"),
         ("atlassian", "Jira and Confluence"),
         ("sharepoint", "SharePoint and OneDrive files"),
+        ("teams", "Teams chats"),
         ("finish", "Finish"),
     ]
 

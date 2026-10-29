@@ -41,7 +41,7 @@ It creates the environment in `%LOCALAPPDATA%\AI_OIL\venv`, installs AI_OIL (wit
 
 ### 3. The setup wizard
 
-The wizard proposes, you confirm. Press Enter to accept the value in brackets, type `s` to skip a stage. Nothing is written before a stage is validated, and it never writes to Outlook, Jira, Confluence or SharePoint.
+The wizard proposes, you confirm. Press Enter to accept the value in brackets, type `s` to skip a stage. Nothing is written before a stage is validated, and it never writes to Outlook, Jira, Confluence, SharePoint or Teams.
 
 | Stage (`--only` name) | What it detects | What it asks |
 |---|---|---|
@@ -52,6 +52,7 @@ The wizard proposes, you confirm. Press Enter to accept the value in brackets, t
 | Network (`network`) | Windows proxy; TLS test to Atlassian with and without the Windows certificate store | Nothing |
 | Jira and Confluence (`atlassian`) | Site URL from any pasted Jira link; Confluence derived | API token (hidden, goes to Windows Credential Manager only); then pick projects and spaces from live lists |
 | SharePoint and OneDrive files (`sharepoint`) | All OneDrive-synced libraries with name and URL | Pick from a numbered list |
+| Teams chats (`teams`) | The `AI_OIL-Teams` folder in Documents and in OneDrive; its `Teams_Bridge*.xlsx` files, the `TeamsMessages` table and the newest captured message | Confirm or choose the folder; skipped with an open item until the bridge of `docs/teams_bridge_setup.md` exists |
 | Finish (`finish`) | Live check of every connector | First project; whether to start AI_OIL now |
 
 ### 4. Start AI_OIL

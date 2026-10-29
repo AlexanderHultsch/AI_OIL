@@ -82,3 +82,5 @@ Create `Teams_Bridge_2027.xlsx` with the same table, and change the **File** in 
 
 Once the Teams connector is built (step T2), run:
 `"%LOCALAPPDATA%\AI_OIL\venv\Scripts\oil.exe" setup --only teams`
+
+In AI_OIL, link a chat by pasting a Teams message link ("Copy link" on any message) or by searching for it in the link dialog.

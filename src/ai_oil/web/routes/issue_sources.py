@@ -27,6 +27,7 @@ TYPE_HEADINGS = (
     ("jira_issue", "Jira"),
     ("confluence_page", "Confluence"),
     ("file", "SharePoint / OneDrive"),
+    ("teams_thread", "Teams"),
     ("note", "Notes"),
     ("web_link", "Web links"),
 )
@@ -38,7 +39,7 @@ STATUS_ICONS = {
     "pending": ("…", None),
     "skipped": ("–", "connector disabled"),
 }  # UI-21: the icon of a fetch status and its fixed tooltip (an error shows its own message)
-LINK_MODES = ("reference", "outlook-selected", "outlook-subject")
+LINK_MODES = ("reference", "outlook-selected", "outlook-subject", "teams-search")
 DEFAULT_ROLE = "reference"
 NEVER = "never"
 
@@ -148,6 +149,7 @@ def sources_context(
     return {
         "issue": issue,
         "source_groups": _groups(linking.list_issue_sources(conn, issue.key)),
+        "teams_available": link_service.teams_available(conn),
         "roles": linking.ROLES,
         "default_role": DEFAULT_ROLE,
         "sync_summary": _summary(report, backup_line),
@@ -241,7 +243,7 @@ def _pick(value: str) -> int:
 
 
 def _selection(
-    conn: sqlalchemy.Connection, mode: str, reference: str, subject: str, pick: str
+    conn: sqlalchemy.Connection, mode: str, reference: str, subject: str, pick: str, query: str = ""
 ) -> link_service.Selection:
     """The selection a link request stands for; the request is stateless, so it is made again (UI-22)."""
     if mode == "reference":
@@ -258,6 +260,14 @@ def _selection(
         if not 1 <= number <= len(candidates):
             raise ValidationError(f"pick {number} is out of range: {len(candidates)} conversations match")
         return link_service.Selection(row, connector, candidates[number - 1].ref)
+    if mode == "teams-search":
+        if not query.strip():
+            raise ValidationError("enter a chat name, a participant or a word to search for")
+        row, connector, found = link_service.teams_candidates(conn, query)
+        number = _pick(pick)
+        if not 1 <= number <= len(found):
+            raise ValidationError(f"pick {number} is out of range: {len(found)} conversations match")
+        return link_service.Selection(row, connector, found[number - 1].ref)
     raise ValidationError(f"mode must be one of {', '.join(LINK_MODES)}")
 
 
@@ -336,7 +346,42 @@ def outlook_search(
     return render(
         request,
         "issue/_source_candidates.html",
-        {"issue": issue, "subject": subject, "candidates": list(enumerate(lines, start=1))},
+        {
+            "issue": issue,
+            "mode": "outlook-subject",
+            "field": "subject",
+            "search_text": subject,
+            "candidates": list(enumerate(lines, start=1)),
+        },
+    )
+
+
+@router.post("/issues/{key}/sources/teams-search")
+def teams_search(
+    request: Request,
+    key: str,
+    engine: Annotated[sqlalchemy.Engine, Depends(get_engine)],
+    query: Annotated[str, Form()] = "",
+) -> Response:
+    """List the captured Teams conversations that match; each can be linked (CON-67)."""
+    issue = _issue(engine, key)
+    if not query.strip():
+        raise ValidationError("enter a chat name, a participant or a word to search for")
+    with engine.begin() as conn:
+        _, _, candidates = link_service.teams_candidates(conn, query)
+    lines = [
+        link_service.describe_teams_candidate(number, c).strip() for number, c in enumerate(candidates, 1)
+    ]
+    return render(
+        request,
+        "issue/_source_candidates.html",
+        {
+            "issue": issue,
+            "mode": "teams-search",
+            "field": "query",
+            "search_text": query,
+            "candidates": list(enumerate(lines, start=1)),
+        },
     )
 
 
@@ -349,6 +394,7 @@ def link(
     mode: Annotated[str, Form()] = "reference",
     reference: Annotated[str, Form()] = "",
     subject: Annotated[str, Form()] = "",
+    query: Annotated[str, Form()] = "",
     pick: Annotated[str, Form()] = "",
     role: Annotated[str, Form()] = DEFAULT_ROLE,
     note_text: Annotated[str, Form()] = "",
@@ -357,7 +403,7 @@ def link(
     issue = _issue(engine, key)
     with engine.begin() as conn:
         me = people.get_me(conn)
-        selection = _selection(conn, mode.strip() or "reference", reference, subject, pick)
+        selection = _selection(conn, mode.strip() or "reference", reference, subject, pick, query)
     _, _, report = link_service.link_selection(
         engine,
         config,

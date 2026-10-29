@@ -50,7 +50,7 @@ class FinishStage:
             rows = registry.list_connectors(conn)
         if not rows:
             open_items.append(
-                "Connectors: run `oil setup` again to add Outlook, Jira, Confluence or SharePoint"
+                "Connectors: run `oil setup` again to add Outlook, Jira, Confluence, SharePoint or Teams"
             )
             return ["No connectors configured"]
         for row in rows:

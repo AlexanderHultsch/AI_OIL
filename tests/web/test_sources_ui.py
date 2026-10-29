@@ -7,6 +7,8 @@ from typing import ClassVar
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
+from openpyxl.worksheet.table import Table
 from sqlalchemy import text
 
 from ai_oil import backup, timeutil
@@ -297,7 +299,8 @@ def test_sources_are_grouped_by_type_in_the_fixed_order(
     detail_app: FastAPI, detail_client: TestClient
 ) -> None:
     web = seed(detail_app, "web_link", "https://example.com/a", display_ref="example.com/a")
-    other = seed(detail_app, "teams_thread", "t1", display_ref="Teams chat")
+    other = seed(detail_app, "attachment", "a1", display_ref="drawing.pdf")
+    teams = seed(detail_app, "teams_thread", "t1", display_ref="Teams chat")
     note = seed(detail_app, "note", "n1", title="Meeting note")
     sharepoint = seed(detail_app, "file", "f1", display_ref="spec.xlsx")
     jira = seed(detail_app, "jira_issue", "HWDEV-1187", display_ref="HWDEV-1187")
@@ -308,9 +311,18 @@ def test_sources_are_grouped_by_type_in_the_fixed_order(
     panel = panel_of(detail_client.get("/issues/OIL-2").text)
 
     headings = re.findall(r'<h3 class="source-group">(.*?)</h3>', panel)
-    assert headings == ["Email", "Jira", "Confluence", "SharePoint / OneDrive", "Notes", "Web links", "Other"]
+    assert headings == [
+        "Email",
+        "Jira",
+        "Confluence",
+        "SharePoint / OneDrive",
+        "Teams",
+        "Notes",
+        "Web links",
+        "Other",
+    ]
     order = [int(i) for i in re.findall(r'<li class="source" id="source-(\d+)">', panel)]
-    assert order == [email, jira, jira_two, confluence, sharepoint, note, web, other]
+    assert order == [email, jira, jira_two, confluence, sharepoint, teams, note, web, other]
     assert "No sources linked yet." not in panel
 
 
@@ -921,6 +933,141 @@ def test_a_subject_without_a_hit_or_blank_is_a_422(post, mailbox) -> None:
     assert "enter a subject" in post("/issues/OIL-2/sources/outlook-search", {"subject": " "}).text
 
 
+# --- the link dialog: Teams --------------------------------------------------------------------------------
+
+TEAMS_COLUMNS = ["MessageId", "ConversationId", "ConversationType", "Timestamp", "SenderName", "Text"]
+TEAMS_ROWS = [
+    [
+        "1700000000001",
+        "19:torque@thread.v2",
+        "chat",
+        "2026-03-01T10:00:00+00:00",
+        "Jane",
+        "Lead time for L301?",
+    ],
+    ["1700000000002", "19:torque@thread.v2", "chat", "2026-03-04T10:00:00+00:00", "Bob", "Twelve weeks"],
+    ["1700000000003", "19:gate@thread.v2", "chat", "2026-03-05T10:00:00+00:00", "Carla", "Gate review L301"],
+    ["1700000000004", "19:other@thread.v2", "chat", "2026-03-06T10:00:00+00:00", "Dan", "Lunch?"],
+]
+
+
+@pytest.fixture
+def teams_bridge(detail_app: FastAPI, tmp_path: Path) -> Path:
+    folder = tmp_path / "AI_OIL-Teams"
+    folder.mkdir()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(TEAMS_COLUMNS)
+    for row in TEAMS_ROWS:
+        sheet.append(row)
+    sheet.add_table(Table(displayName="TeamsMessages", ref=f"A1:F{len(TEAMS_ROWS) + 1}"))
+    workbook.save(folder / "Teams_Bridge_2026.xlsx")
+    with detail_app.state.engine.begin() as conn:
+        registry.create_connector(conn, "teams", "Teams", settings={"folder": str(folder)})
+    return folder
+
+
+def test_the_teams_search_is_offered_only_with_an_enabled_teams_connector(
+    detail_app: FastAPI, detail_client: TestClient
+) -> None:
+    def panel() -> str:
+        return panel_of(detail_client.get("/issues/OIL-2").text)
+
+    assert 'sources/teams-search"' not in panel() and "Search Teams chats" not in panel()
+    with detail_app.state.engine.begin() as conn:
+        row = registry.create_connector(conn, "teams", "Teams", settings={"folder": "x"})
+    shown = panel()
+    assert 'hx-post="/issues/OIL-2/sources/teams-search"' in shown
+    assert "Search Teams chats" in shown and 'name="query"' in shown
+    with detail_app.state.engine.begin() as conn:
+        registry.set_enabled(conn, row.id, False)
+    assert "Search Teams chats" not in panel()
+
+
+def test_the_teams_search_lists_the_candidates_with_a_link_button_each(teams_bridge, post) -> None:
+    response = post("/issues/OIL-2/sources/teams-search", {"query": "l301"})
+
+    assert response.status_code == 200
+    items = re.findall(r"<li>(.*?)</li>", response.text, re.DOTALL)
+    assert len(items) == 2
+    assert re.search(r"1\. Chat with Carla — 2026-03-0\d \d\d:\d\d — Carla \(1 messages\)", plain(items[0]))
+    assert re.search(r"2\. Chat with Jane, Bob — 2026-03-0\d \d\d:\d\d — Bob \(2 messages\)", plain(items[1]))
+    for number, item in enumerate(items, start=1):
+        assert 'hx-post="/issues/OIL-2/sources/link"' in item
+        hidden = dict(re.findall(r'<input type="hidden" name="(\w+)" value="([^"]*)">', item))
+        assert hidden == {"mode": "teams-search", "query": "l301", "pick": str(number)}
+
+
+def test_linking_a_picked_teams_conversation_fetches_its_messages(
+    detail_app: FastAPI, post, teams_bridge
+) -> None:
+    response = post("/issues/OIL-2/sources/link", {"mode": "teams-search", "query": "l301", "pick": "2"})
+
+    assert response.status_code == 200
+    [obj] = rows(detail_app, "SELECT id, object_type, external_id FROM source_object")
+    assert (obj.object_type, obj.external_id) == ("teams_thread", "19:torque@thread.v2")
+    assert "Teams" in re.findall(r'<h3 class="source-group">(.*?)</h3>', response.text)
+    assert f'href="/sources/{obj.id}">Chat with Jane, Bob</a>' in response.text
+    assert "0 versions · 2 entries" in entry_of(response.text, obj.id)
+    [logged] = entries(detail_app, "source.link")
+    assert logged.detail["via"] == "web"
+    assert logged.detail["label"] == "teams_thread: Chat with Jane, Bob"
+
+
+def test_a_pasted_teams_message_link_is_previewed_and_linked(detail_app: FastAPI, post, teams_bridge) -> None:
+    link = "https://teams.microsoft.com/l/message/19%3Agate%40thread.v2/1700000000003?tenantId=t"
+
+    preview = post("/issues/OIL-2/sources/preview", {"reference": link})
+
+    text_ = plain(preview.text)
+    assert "Connector Teams (teams)" in text_ and "Type teams_thread" in text_
+    assert "Title Chat with Carla" in text_
+    hidden = dict(re.findall(r'<input type="hidden" name="(\w+)" value="([^"]*)">', preview.text))
+    assert rows(detail_app, "SELECT id FROM source_object") == []
+
+    response = post("/issues/OIL-2/sources/link", hidden)
+
+    assert response.status_code == 200
+    [obj] = rows(detail_app, "SELECT external_id FROM source_object")
+    assert obj.external_id == "19:gate@thread.v2"
+
+
+@pytest.mark.parametrize("pick", ["3", "0", "-1", "", "two"])
+def test_a_teams_pick_out_of_range_or_missing_is_a_422(
+    detail_app: FastAPI, post, teams_bridge, pick: str
+) -> None:
+    response = post("/issues/OIL-2/sources/link", {"mode": "teams-search", "query": "l301", "pick": pick})
+
+    assert response.status_code == 422
+    assert response.text.startswith(ERROR_PREFIX)
+    if pick in ("3", "0", "-1"):
+        assert "out of range: 2 conversations match" in response.text
+    assert rows(detail_app, "SELECT id FROM source_object") == []
+
+
+def test_a_teams_search_without_a_hit_or_blank_is_a_422(post, teams_bridge) -> None:
+    for path, data in (
+        ("teams-search", {"query": "gearbox"}),
+        ("link", {"mode": "teams-search", "query": "gearbox", "pick": "1"}),
+    ):
+        response = post(f"/issues/OIL-2/sources/{path}", data)
+
+        assert response.status_code == 422
+        assert "no Teams conversation matches &#39;gearbox&#39;" in response.text
+    assert "enter a chat name" in post("/issues/OIL-2/sources/teams-search", {"query": " "}).text
+
+
+def test_teams_actions_without_a_teams_connector_are_422(post) -> None:
+    for path, data in (
+        ("teams-search", {"query": "x"}),
+        ("link", {"mode": "teams-search", "query": "x", "pick": "1"}),
+    ):
+        response = post(f"/issues/OIL-2/sources/{path}", data)
+
+        assert response.status_code == 422, path
+        assert "no enabled Teams connector" in response.text
+
+
 # --- the link dialog: note ---------------------------------------------------------------------------------
 
 
@@ -991,6 +1138,7 @@ def test_the_dialog_has_the_three_forms(detail_client: TestClient) -> None:
         "preview",
         "preview-outlook",
         "outlook-search",
+        "teams-search",
         "link",
         "note",
     ],

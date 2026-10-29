@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import sqlalchemy
 
 from ai_oil.config import Config
-from ai_oil.connectors import manual, outlook
+from ai_oil.connectors import manual, outlook, teams
 from ai_oil.errors import ValidationError
 from ai_oil.governance import audit
 from ai_oil.sources import linking, registry, store
@@ -125,6 +125,49 @@ def describe_candidate(number: int, candidate: outlook.ConversationCandidate) ->
         f"  {number}. {candidate.subject} — {latest} — {candidate.sender}"
         f" ({candidate.message_count} messages)"
     )
+
+
+def _teams_among(instances: Instances, connector: str | None) -> tuple[registry.ConnectorRow, object]:
+    found = [(row, instance) for row, instance in instances if row.type == teams.TeamsConnector.type]
+    if connector is not None and instances and not found:
+        raise ValidationError(f"connector {connector} is not a Teams connector")
+    if not found:
+        raise ValidationError("no enabled Teams connector — add one with `oil connector add teams`")
+    if len(found) > 1:
+        names = ", ".join(row.name for row, _ in found)
+        raise ValidationError(f"several Teams connectors are enabled ({names}); choose one with --connector")
+    return found[0]
+
+
+def teams_candidates(
+    conn: sqlalchemy.Connection, text: str, *, connector: str | None = None
+) -> tuple[registry.ConnectorRow, object, list[teams.ConversationCandidate]]:
+    """The captured Teams conversations whose name, senders or messages match, newest first; none is an error."""  # noqa: E501
+    instances, _ = _instances(conn, connector)
+    row, instance = _teams_among(instances, connector)
+    candidates = instance.find_conversations(text)  # type: ignore[attr-defined]
+    if not candidates:
+        raise ValidationError(f"no Teams conversation matches '{text}'")
+    return row, instance, candidates
+
+
+def describe_teams_candidate(number: int, candidate: teams.ConversationCandidate) -> str:
+    """The line of a Teams hit, in the shape of an Outlook hit: the title stands for the subject."""
+    return describe_candidate(
+        number,
+        outlook.ConversationCandidate(
+            ref=candidate.ref,
+            subject=candidate.title,
+            latest=candidate.latest,
+            sender=candidate.sender,
+            message_count=candidate.message_count,
+        ),
+    )
+
+
+def teams_available(conn: sqlalchemy.Connection) -> bool:
+    """Whether an enabled Teams connector is configured, i.e. whether the Teams search is offered."""
+    return any(row.enabled for row in registry.list_connectors(conn, type_name=teams.TeamsConnector.type))
 
 
 def preview(selection: Selection) -> ObjectMeta:

@@ -9,6 +9,7 @@ from ai_oil.setup.stages_connectors import (
     NetworkStage,
     OutlookStage,
     SharePointStage,
+    TeamsStage,
 )
 from ai_oil.setup.stages_finish import FinishStage
 
@@ -20,6 +21,7 @@ STAGES: list[Stage] = [
     NetworkStage(),
     AtlassianStage(),
     SharePointStage(),
+    TeamsStage(),
     FinishStage(),
 ]
 

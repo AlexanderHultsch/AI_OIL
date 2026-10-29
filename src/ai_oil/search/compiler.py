@@ -20,6 +20,7 @@ _SOURCE_TYPES = {
     "jira": "jira_issue",
     "confluence": "confluence_page",
     "sharepoint": "file",
+    "teams": "teams_thread",
     "note": "note",
     "web": "web_link",
 }

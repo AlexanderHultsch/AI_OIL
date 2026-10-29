@@ -1,11 +1,11 @@
-{#- The Outlook conversations found by subject; each one has its own Link button (CON-21). -#}
+{#- The conversations found by an Outlook subject search or a Teams search; each one has its own Link button (CON-21, CON-67). -#}
 <ul class="candidate-list">
   {% for number, line in candidates %}
   <li>
     <span class="candidate">{{ line }}</span>
     <form hx-post="/issues/{{ issue.key }}/sources/link" hx-target="#sources-panel" hx-swap="outerHTML">
-      <input type="hidden" name="mode" value="outlook-subject">
-      <input type="hidden" name="subject" value="{{ subject }}">
+      <input type="hidden" name="mode" value="{{ mode }}">
+      <input type="hidden" name="{{ field }}" value="{{ search_text }}">
       <input type="hidden" name="pick" value="{{ number }}">
       <button type="submit">Link</button>
     </form>

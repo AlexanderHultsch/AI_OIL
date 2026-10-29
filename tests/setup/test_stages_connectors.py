@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 import requests
+from openpyxl import Workbook
+from openpyxl.worksheet.table import Table
 
 from ai_oil import secrets
 from ai_oil.config import load_config
@@ -20,12 +22,14 @@ from ai_oil.setup.stages_connectors import (
     OutlookStage,
     ProbeOutcome,
     SharePointStage,
+    TeamsStage,
     normalise_site,
     probe_https,
 )
 from ai_oil.setup.wizard import run_wizard
 from ai_oil.sources import registry
-from ai_oil.sources.model import HealthCheck
+from ai_oil.sources.model import ConnectorConfig, HealthCheck, HealthReport
+from ai_oil.timeutil import local_display
 
 # --- helpers ---------------------------------------------------------------------------------------
 
@@ -1517,3 +1521,319 @@ def test_sharepoint_on_an_uninitialised_folder_fails_with_the_init_hint(
     probe.libraries = libraries
     with pytest.raises(ConfigError, match="oil init"):
         SharePointStage().run(make_ctx(fresh_home, probe=probe))
+
+
+# --- teams -----------------------------------------------------------------------------------------------
+
+TEAMS_OPEN_ITEM = (
+    "Teams: set up the bridge with docs/teams_bridge_setup.md, then run `oil setup --only teams`"
+)
+GOOD_TEAMS_CHECKS = [
+    HealthCheck("folder", True, "bridge"),
+    HealthCheck("files", True, "2 file(s) matching Teams_Bridge*.xlsx"),
+    HealthCheck("file Teams_Bridge_2025.xlsx", True, "table TeamsMessages: 4 message(s)"),
+    HealthCheck("file Teams_Bridge_2026.xlsx", True, "table TeamsMessages: 9 message(s)"),
+    HealthCheck("newest message", True, "2026-03-02 11:00"),
+]
+EMPTY_TEAMS_CHECKS = [
+    HealthCheck("folder", True, "bridge"),
+    HealthCheck("files", False, "no file matching Teams_Bridge*.xlsx in bridge"),
+    HealthCheck("newest message", True, "none captured yet"),
+]
+BROKEN_TEAMS_CHECKS = [
+    HealthCheck("folder", True, "bridge"),
+    HealthCheck("files", True, "1 file(s) matching Teams_Bridge*.xlsx"),
+    HealthCheck("file Teams_Bridge_2026.xlsx", False, "table TeamsMessages not found"),
+    HealthCheck("newest message", True, "none captured yet"),
+]
+
+
+class FakeTeamsConnector:
+    def __init__(self, checks: list[HealthCheck]) -> None:
+        self.checks = checks
+
+    def check(self) -> HealthReport:
+        return HealthReport(tuple(self.checks))
+
+
+class TeamsFactory:
+    """Answers every check with the same list and remembers the configurations it was asked for."""
+
+    def __init__(self, checks: list[HealthCheck] = GOOD_TEAMS_CHECKS) -> None:
+        self.checks = checks
+        self.configs: list[ConnectorConfig] = []
+
+    def __call__(self, config: ConnectorConfig) -> FakeTeamsConnector:
+        self.configs.append(config)
+        return FakeTeamsConnector(self.checks)
+
+
+def _teams_folder(parent: Path) -> Path:
+    folder = parent / "AI_OIL-Teams"
+    folder.mkdir(parents=True)
+    return folder
+
+
+def _teams(factory: TeamsFactory | None = None) -> TeamsStage:
+    return TeamsStage(connector_factory=factory or TeamsFactory())  # type: ignore[arg-type]
+
+
+def test_teams_without_a_bridge_folder_is_skipped_with_an_open_item(
+    make_ctx, probe, initialised_home: Path, onedrive: Path, tmp_path: Path
+) -> None:
+    probe.documents = tmp_path / "Documents"
+    probe.roots = [onedrive]
+    factory = TeamsFactory()
+    ctx = make_ctx(initialised_home, probe=probe)
+
+    result = _teams(factory).run(ctx)
+
+    assert result.status == "skipped"
+    assert result.lines == ["No Teams bridge folder found"]
+    assert result.open_items == [TEAMS_OPEN_ITEM]
+    assert ctx.console.prompts == [] and factory.configs == [] and _connectors(initialised_home) == []
+
+
+def test_teams_a_single_folder_is_proposed_and_the_connector_is_created_and_audited(
+    make_ctx, probe, initialised_home: Path, tmp_path: Path
+) -> None:
+    folder = _teams_folder(tmp_path / "Documents")
+    probe.documents = tmp_path / "Documents"
+    factory = TeamsFactory()
+    ctx = make_ctx(initialised_home, [""], probe=probe)
+
+    result = _teams(factory).run(ctx)
+
+    output = ctx.console.output
+    assert ctx.console.prompts == [f"Teams bridge folder [{folder}]: "]
+    assert "[ok] file Teams_Bridge_2026.xlsx: table TeamsMessages: 9 message(s)" in output
+    assert "[ok] newest message: 2026-03-02 11:00" in output
+    assert result.status == "done" and result.open_items == []
+    assert result.lines == [f"Teams bridge: {folder} — 2 files, newest message 2026-03-02 11:00"]
+    (config,) = factory.configs
+    assert (config.type, config.name, config.settings) == ("teams", "Teams", {"folder": str(folder)})
+    (row,) = _connectors(initialised_home, "teams")
+    assert row.name == "Teams" and row.credential_ref is None
+    assert row.settings == {"folder": str(folder)}
+    (entry,) = _audit_in_order(initialised_home)
+    assert (entry.action, entry.action_class, entry.actor_type, entry.target) == (
+        "connector.create",
+        "B",
+        "user",
+        "Teams",
+    )
+    assert entry.detail == {"type": "teams", "settings": {"folder": str(folder)}, "credential": "none"}
+
+
+def test_teams_a_single_file_is_counted_in_the_singular(
+    make_ctx, probe, initialised_home: Path, tmp_path: Path
+) -> None:
+    _teams_folder(tmp_path / "Documents")
+    probe.documents = tmp_path / "Documents"
+    checks = [check for check in GOOD_TEAMS_CHECKS if check.name != "file Teams_Bridge_2025.xlsx"]
+
+    result = _teams(TeamsFactory(checks)).run(make_ctx(initialised_home, [""], probe=probe))
+
+    assert result.lines[0].endswith(" — 1 file, newest message 2026-03-02 11:00")
+
+
+def test_teams_the_proposed_folder_can_be_replaced_by_another_existing_one(
+    make_ctx, probe, initialised_home: Path, tmp_path: Path
+) -> None:
+    _teams_folder(tmp_path / "Documents")
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    probe.documents = tmp_path / "Documents"
+    factory = TeamsFactory()
+    ctx = make_ctx(initialised_home, [str(tmp_path / "nowhere"), f'"{other}"'], probe=probe)
+
+    _teams(factory).run(ctx)
+
+    assert f"{tmp_path / 'nowhere'} is not an existing folder." in ctx.console.output
+    (row,) = _connectors(initialised_home, "teams")
+    assert row.settings == {"folder": str(other)}
+
+
+def test_teams_the_same_folder_found_twice_is_offered_once(
+    make_ctx, probe, initialised_home: Path, onedrive: Path
+) -> None:
+    folder = _teams_folder(onedrive / "Documents")
+    probe.documents = onedrive / "Documents"
+    probe.roots = [onedrive, onedrive]
+    ctx = make_ctx(initialised_home, [""], probe=probe)
+
+    result = _teams().run(ctx)
+
+    assert "  1)" not in ctx.console.output
+    assert result.lines[0].startswith(f"Teams bridge: {folder} — ")
+
+
+def test_teams_several_folders_are_chosen_from_a_list(
+    make_ctx, probe, initialised_home: Path, onedrive: Path, tmp_path: Path
+) -> None:
+    documents = _teams_folder(tmp_path / "Documents")
+    at_root = _teams_folder(onedrive)
+    under_documents = _teams_folder(onedrive / "Documents")
+    probe.documents = tmp_path / "Documents"
+    probe.roots = [onedrive]
+    factory = TeamsFactory()
+    ctx = make_ctx(initialised_home, ["3"], probe=probe)
+
+    result = _teams(factory).run(ctx)
+
+    output = ctx.console.output
+    assert f"  1) {documents}\n  2) {at_root}\n  3) {under_documents}\n" in output
+    assert ctx.console.prompts == ["Number [1]: "]
+    assert result.lines[0].startswith(f"Teams bridge: {under_documents} — ")
+    (row,) = _connectors(initialised_home, "teams")
+    assert row.settings == {"folder": str(under_documents)}
+    assert [config.settings["folder"] for config in factory.configs] == [str(under_documents)]
+
+
+def test_teams_a_missing_candidate_is_not_offered(
+    make_ctx, probe, initialised_home: Path, onedrive: Path, tmp_path: Path
+) -> None:
+    probe.documents = tmp_path / "Documents"
+    at_root = _teams_folder(onedrive)
+    probe.roots = [onedrive, tmp_path / "Gone"]
+
+    ctx = make_ctx(initialised_home, [""], probe=probe)
+    _teams().run(ctx)
+
+    assert ctx.console.prompts == [f"Teams bridge folder [{at_root}]: "]
+
+
+def test_teams_without_a_valid_table_the_connector_is_not_created_unless_confirmed(
+    make_ctx, probe, initialised_home: Path, tmp_path: Path
+) -> None:
+    _teams_folder(tmp_path / "Documents")
+    probe.documents = tmp_path / "Documents"
+    ctx = make_ctx(initialised_home, ["", ""], probe=probe)
+
+    result = _teams(TeamsFactory(BROKEN_TEAMS_CHECKS)).run(ctx)
+
+    output = ctx.console.output
+    assert "[!!] file Teams_Bridge_2026.xlsx: table TeamsMessages not found" in output
+    assert "Section 1 of docs/teams_bridge_setup.md" in output
+    assert ctx.console.prompts[-1] == "Create the connector anyway? [y/N]: "
+    assert result.status == "skipped" and result.open_items == [TEAMS_OPEN_ITEM]
+    assert _connectors(initialised_home) == [] and _audit(initialised_home) == []
+
+
+def test_teams_without_any_bridge_file_the_connector_can_still_be_created_on_request(
+    make_ctx, probe, initialised_home: Path, tmp_path: Path
+) -> None:
+    folder = _teams_folder(tmp_path / "Documents")
+    probe.documents = tmp_path / "Documents"
+    ctx = make_ctx(initialised_home, ["", "y"], probe=probe)
+
+    result = _teams(TeamsFactory(EMPTY_TEAMS_CHECKS)).run(ctx)
+
+    assert result.status == "done"
+    assert result.lines == [f"Teams bridge: {folder} — 0 files, newest message none captured yet"]
+    (row,) = _connectors(initialised_home, "teams")
+    assert row.settings == {"folder": str(folder)}
+    assert [entry.action for entry in _audit_in_order(initialised_home)] == ["connector.create"]
+
+
+def test_teams_a_rerun_updates_the_connector_in_place_and_keeps_its_other_settings(
+    make_ctx, probe, initialised_home: Path, onedrive: Path, tmp_path: Path
+) -> None:
+    documents = _teams_folder(tmp_path / "Documents")
+    configured = _teams_folder(onedrive / "Documents")
+    _add_connector(
+        initialised_home,
+        "teams",
+        "Chats",
+        {"folder": str(configured), "file_pattern": "Chats_*.xlsx", "hydrate": False},
+    )
+    probe.documents = tmp_path / "Documents"
+    probe.roots = [onedrive]
+    factory = TeamsFactory()
+    ctx = make_ctx(initialised_home, [""], probe=probe)
+
+    result = _teams(factory).run(ctx)
+
+    assert ctx.console.prompts == ["Number [2]: "]
+    assert f"  1) {documents}\n  2) {configured}\n" in ctx.console.output
+    assert result.lines[0].startswith(f"Teams bridge: {configured} — ")
+    (row,) = _connectors(initialised_home, "teams")
+    assert row.name == "Chats"
+    assert row.settings == {"folder": str(configured), "file_pattern": "Chats_*.xlsx", "hydrate": False}
+    (config,) = factory.configs
+    assert (config.id, config.name) == (row.id, "Chats")
+    assert config.settings == row.settings
+    (entry,) = _audit_in_order(initialised_home)
+    assert (entry.action, entry.target, entry.detail["credential"]) == (
+        "connector.update",
+        "Chats",
+        "unchanged",
+    )
+
+
+def test_teams_a_rerun_can_move_the_connector_to_another_folder(
+    make_ctx, probe, initialised_home: Path, onedrive: Path, tmp_path: Path
+) -> None:
+    documents = _teams_folder(tmp_path / "Documents")
+    configured = _teams_folder(onedrive / "Documents")
+    _add_connector(initialised_home, "teams", "Teams", {"folder": str(configured)})
+    probe.documents = tmp_path / "Documents"
+    probe.roots = [onedrive]
+
+    _teams().run(make_ctx(initialised_home, ["1"], probe=probe))
+
+    (row,) = _connectors(initialised_home, "teams")
+    assert row.settings == {"folder": str(documents)}
+
+
+def test_teams_a_configured_folder_that_is_gone_is_not_offered(
+    make_ctx, probe, initialised_home: Path, tmp_path: Path
+) -> None:
+    folder = _teams_folder(tmp_path / "Documents")
+    _add_connector(initialised_home, "teams", "Teams", {"folder": str(tmp_path / "moved")})
+    probe.documents = tmp_path / "Documents"
+    ctx = make_ctx(initialised_home, [""], probe=probe)
+
+    _teams().run(ctx)
+
+    assert ctx.console.prompts == [f"Teams bridge folder [{folder}]: "]
+    (row,) = _connectors(initialised_home, "teams")
+    assert row.settings == {"folder": str(folder)}
+
+
+def test_teams_a_folder_that_is_gone_and_nothing_else_skips_without_touching_the_connector(
+    make_ctx, probe, initialised_home: Path, tmp_path: Path
+) -> None:
+    _add_connector(initialised_home, "teams", "Teams", {"folder": str(tmp_path / "moved")})
+
+    result = _teams().run(make_ctx(initialised_home, probe=probe))
+
+    assert result.status == "skipped" and result.open_items == [TEAMS_OPEN_ITEM]
+    assert _connectors(initialised_home, "teams")[0].settings == {"folder": str(tmp_path / "moved")}
+
+
+def test_teams_the_real_connector_reads_a_real_bridge_file(
+    make_ctx, probe, initialised_home: Path, tmp_path: Path
+) -> None:
+    folder = _teams_folder(tmp_path / "Documents")
+    workbook = Workbook()
+    sheet = workbook.active
+    columns = ["MessageId", "ConversationId", "ConversationType", "Timestamp", "SenderName", "Text"]
+    sheet.append(columns)
+    sheet.append(["m1", "19:a@thread.v2", "chat", "2026-03-02T11:00:00+00:00", "Jane", "Hello"])
+    sheet.add_table(Table(displayName="TeamsMessages", ref="A1:F2"))
+    workbook.save(folder / "Teams_Bridge_2026.xlsx")
+    probe.documents = tmp_path / "Documents"
+    ctx = make_ctx(initialised_home, [""], probe=probe)
+
+    result = TeamsStage().run(ctx)
+
+    newest = local_display("2026-03-02T11:00:00.000Z")
+    assert result.status == "done"
+    assert result.lines == [f"Teams bridge: {folder} — 1 file, newest message {newest}"]
+    assert "[ok] file Teams_Bridge_2026.xlsx: table TeamsMessages: 1 message(s)" in ctx.console.output
+
+
+def test_teams_on_an_uninitialised_folder_fails_with_the_init_hint(make_ctx, probe, fresh_home: Path) -> None:
+    with pytest.raises(ConfigError, match="oil init"):
+        _teams().run(make_ctx(fresh_home, probe=probe))

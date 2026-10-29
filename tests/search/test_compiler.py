@@ -197,6 +197,7 @@ def build_world(conn: sqlalchemy.Connection) -> None:
     file = source("file", "file-1", "BOM.xlsx")
     note = source("note", "note-1", "Meeting note")
     web = source("web_link", "web-1", "Supplier portal")
+    teams = source("teams_thread", "19:chat@thread.v2", "Torque chat")
     for key, object_id in (
         ("OIL-2", email),
         ("OIL-6", email),
@@ -205,6 +206,7 @@ def build_world(conn: sqlalchemy.Connection) -> None:
         ("OIL-4", file),
         ("OIL-5", note),
         ("PLT-1", web),
+        ("OIL-6", teams),
     ):
         linking.link_source(conn, key, object_id, actor_id=me.id)
     linking.unlink_source(conn, "OIL-6", email, actor_id=me.id)
@@ -471,8 +473,11 @@ FIELD_CASES = [
     ("source = confluence", ["OIL-1"]),
     ("source = sharepoint", ["OIL-4"]),
     ("source = note", ["OIL-5"]),
+    ("source = teams", ["OIL-6"]),
+    ("source = TEAMS", ["OIL-6"]),
     ("source = web", ["PLT-1"]),
     ("source in (email, jira)", ["OIL-3", "OIL-2"]),
+    ("source in (email, teams)", ["OIL-2", "OIL-6"]),
     ("source != email", everything_but("OIL-2")),
     ("source not in (email, web, note)", everything_but("OIL-2", "PLT-1", "OIL-5")),
     # sourceRef

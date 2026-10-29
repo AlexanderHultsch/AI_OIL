@@ -59,6 +59,14 @@
       <button type="submit">Search</button>
     </form>
     <div id="link-candidates"></div>
+    {% if teams_available -%}
+    <form class="link-form" hx-post="/issues/{{ issue.key }}/sources/teams-search" hx-target="#teams-candidates" hx-swap="innerHTML">
+      <h3>Search Teams chats</h3>
+      <input type="text" name="query" placeholder="Chat name, participant or word" aria-label="Teams search" autocomplete="off" required>
+      <button type="submit">Search</button>
+    </form>
+    <div id="teams-candidates"></div>
+    {%- endif %}
     <form class="link-form" hx-post="/issues/{{ issue.key }}/sources/note">
       <h3>New note</h3>
       <input type="text" name="title" placeholder="Title" aria-label="Note title" autocomplete="off" required>

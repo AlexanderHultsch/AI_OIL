@@ -6,6 +6,8 @@ from typing import ClassVar
 
 import pytest
 import sqlalchemy
+from openpyxl import Workbook
+from openpyxl.worksheet.table import Table
 
 from ai_oil.cli.main import main
 from ai_oil.config import load_config
@@ -885,4 +887,154 @@ def test_link_outlook_options_are_mutually_exclusive(
 
     assert code == 1
     assert "--outlook-selected" in err or "--pick" in err
+    assert rows(db, "SELECT id FROM source_object") == []
+
+
+# --- oil link --teams-search ----------------------------------------------------------------------------
+
+TEAMS_COLUMNS = ["MessageId", "ConversationId", "ConversationType", "Timestamp", "SenderName", "Text"]
+TEAMS_ROWS = [
+    ["1700000000001", "19:torque@thread.v2", "chat", "2026-03-01T10:00:00+00:00", "Jane", "Lead time L301?"],
+    ["1700000000002", "19:torque@thread.v2", "chat", "2026-03-04T10:00:00+00:00", "Bob", "Twelve weeks"],
+    ["1700000000003", "19:gate@thread.v2", "chat", "2026-03-05T10:00:00+00:00", "Carla", "Gate review L301"],
+    ["1700000000004", "19:other@thread.v2", "chat", "2026-03-06T10:00:00+00:00", "Dan", "Lunch?"],
+]
+
+
+@pytest.fixture
+def add_teams(home, tmp_path: Path):
+    folder = tmp_path / "AI_OIL-Teams"
+    folder.mkdir()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(TEAMS_COLUMNS)
+    for row in TEAMS_ROWS:
+        sheet.append(row)
+    sheet.add_table(Table(displayName="TeamsMessages", ref=f"A1:F{len(TEAMS_ROWS) + 1}"))
+    workbook.save(folder / "Teams_Bridge_2026.xlsx")
+
+    def add(name: str = "Teams") -> int:
+        engine = create_db_engine(load_config(home).db_path)
+        try:
+            with engine.begin() as conn:
+                return registry.create_connector(conn, "teams", name, settings={"folder": str(folder)}).id
+        finally:
+            engine.dispose()
+
+    add()
+    return add
+
+
+def test_link_teams_search_with_one_match_links_it(oil, db, capsys, issue, add_teams) -> None:
+    code, out, _ = run(oil, capsys, "link", issue, "--teams-search", "lunch")
+
+    assert code == 0
+    [obj] = rows(db, "SELECT object_type, external_id, display_ref, fetch_status FROM source_object")
+    assert (obj.object_type, obj.external_id, obj.display_ref, obj.fetch_status) == (
+        "teams_thread",
+        "19:other@thread.v2",
+        "Chat with Dan",
+        "ok",
+    )
+    assert out.splitlines()[0] == "Linked teams_thread: Chat with Dan to OIL-1"
+    assert "1 new entries" in out
+
+
+def test_link_teams_search_with_several_matches_lists_them(oil, db, capsys, issue, add_teams) -> None:
+    code, out, err = run(oil, capsys, "link", issue, "--teams-search", "L301")
+
+    assert code == 1
+    assert err == ""
+    lines = out.splitlines()
+    assert lines[0] == "Several conversations match; re-run with --pick N:"
+    assert re.fullmatch(r"  1\. Chat with Carla — 2026-03-0\d \d\d:\d\d — Carla \(1 messages\)", lines[1]), (
+        lines[1]
+    )
+    assert re.fullmatch(
+        r"  2\. Chat with Jane, Bob — 2026-03-0\d \d\d:\d\d — Bob \(2 messages\)", lines[2]
+    ), lines[2]
+    assert len(lines) == 3
+    assert rows(db, "SELECT id FROM source_object") == []
+
+
+def test_link_teams_search_with_pick_links_the_chosen_conversation(oil, db, capsys, issue, add_teams) -> None:
+    code, out, _ = run(oil, capsys, "link", issue, "--teams-search", "L301", "--pick", "2")
+
+    assert code == 0
+    [obj] = rows(db, "SELECT external_id FROM source_object")
+    assert obj.external_id == "19:torque@thread.v2"
+    assert out.splitlines()[0] == "Linked teams_thread: Chat with Jane, Bob to OIL-1"
+    with db() as conn:
+        [entry] = audit.list_entries(conn, action_prefix="source.link")
+    assert (entry.action_class, entry.target) == ("B", "OIL-1")
+
+
+@pytest.mark.parametrize("pick", ["3", "0", "-1"])
+def test_link_teams_search_pick_out_of_range(oil, db, capsys, issue, add_teams, pick: str) -> None:
+    code, _, err = run(oil, capsys, "link", issue, "--teams-search", "L301", "--pick", pick)
+
+    assert code == 1
+    assert "--pick" in err
+    assert rows(db, "SELECT id FROM source_object") == []
+
+
+def test_link_teams_search_without_a_hit_is_rejected(oil, db, capsys, issue, add_teams) -> None:
+    code, _, err = run(oil, capsys, "link", issue, "--teams-search", "gearbox")
+
+    assert code == 1
+    assert "no Teams conversation matches 'gearbox'" in err
+    assert rows(db, "SELECT id FROM source_object") == []
+
+
+def test_link_teams_search_without_a_teams_connector_is_rejected(
+    oil, db, capsys, issue, add_connector
+) -> None:
+    add_connector()
+
+    code, _, err = run(oil, capsys, "link", issue, "--teams-search", "x")
+
+    assert code == 1
+    assert "no enabled Teams connector — add one with `oil connector add teams`" in err
+
+
+def test_link_teams_search_with_several_connectors_needs_a_choice(oil, db, capsys, issue, add_teams) -> None:
+    add_teams("Second")
+
+    code, _, err = run(oil, capsys, "link", issue, "--teams-search", "lunch")
+    assert code == 1
+    assert "several Teams connectors are enabled (Second, Teams)" in err
+
+    code, _, _ = run(oil, capsys, "link", issue, "--teams-search", "lunch", "--connector", "Second")
+    assert code == 0
+    [obj] = rows(db, "SELECT c.name FROM source_object o JOIN connector c ON c.id = o.connector_id")
+    assert obj.name == "Second"
+
+
+def test_link_teams_search_with_a_connector_of_another_type_is_rejected(
+    oil, db, capsys, issue, add_teams, add_connector
+) -> None:
+    add_connector("Jira")
+
+    code, _, err = run(oil, capsys, "link", issue, "--teams-search", "x", "--connector", "Jira")
+
+    assert code == 1
+    assert "connector Jira is not a Teams connector" in err
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("--teams-search", "x", "--outlook-subject", "x"),
+        ("--teams-search", "x", "--outlook-selected"),
+        ("https://example.com/a", "--teams-search", "x"),
+        ("--teams-search", "x", "--title", "T", "--text", "X"),
+    ],
+)
+def test_link_teams_search_is_exclusive_with_the_other_modes(
+    oil, db, capsys, issue, add_teams, argv: tuple[str, ...]
+) -> None:
+    code, _, err = run(oil, capsys, "link", issue, *argv)
+
+    assert code == 1
+    assert "or --teams-search" in err
     assert rows(db, "SELECT id FROM source_object") == []

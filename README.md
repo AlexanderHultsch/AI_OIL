@@ -1,12 +1,12 @@
 # AI_OIL
 
-An AI-assisted open issue list: a deliberately simplified Jira in which every issue carries a dictionary of linked sources (Outlook conversations, Jira tickets, Confluence pages, SharePoint files, manual notes). The system pulls the latest state of every source into the issue, with versions, so that one place holds everything that is known about a topic. On that base, an AI summarises, extracts actions and open questions, proposes links and new issues, and reminds you who is waiting for your reply.
+An AI-assisted open issue list: a deliberately simplified Jira in which every issue carries a dictionary of linked sources (Outlook conversations, Jira tickets, Confluence pages, SharePoint files, Teams chats, manual notes). The system pulls the latest state of every source into the issue, with versions, so that one place holds everything that is known about a topic. On that base, an AI summarises, extracts actions and open questions, proposes links and new issues, and reminds you who is waiting for your reply.
 
 Single user, local on a Windows laptop, Python, SQLite.
 
 ## Status
 
-**Phases 1 and 2 are implemented**: data model, Manual / Outlook / Jira / Confluence / SharePoint connectors, on-demand sync with versioning, full-text search and the OQL query language, CLI, backup — and a Jira-like local web interface (`oil serve`, then http://127.0.0.1:8765/). Phases 3–5 (AI) are not started.
+**Phases 1 and 2 are implemented**: data model, Manual / Outlook / Jira / Confluence / SharePoint / Teams connectors, on-demand sync with versioning, full-text search and the OQL query language, CLI, backup — and a Jira-like local web interface (`oil serve`, then http://127.0.0.1:8765/). Phases 3–5 (AI) are not started.
 
 **Installation on Windows:** double-click `install.bat` (see [`docs/install_windows.md`](docs/install_windows.md)) — code in your (OneDrive-synced) Documents folder is fine, but the Python environment and the database stay in `%LOCALAPPDATA%\AI_OIL`, and only the daily backups go to OneDrive. Start with `start.bat`.
 

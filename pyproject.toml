@@ -39,6 +39,7 @@ jira = "ai_oil.connectors.jira:JiraConnector"
 manual = "ai_oil.connectors.manual:ManualConnector"
 outlook = "ai_oil.connectors.outlook:OutlookConnector"
 sharepoint = "ai_oil.connectors.sharepoint:SharePointConnector"
+teams = "ai_oil.connectors.teams:TeamsConnector"
 
 [tool.setuptools.packages.find]
 where = ["src"]

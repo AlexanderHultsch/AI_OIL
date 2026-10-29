@@ -1,10 +1,12 @@
-"""The wizard stages that talk to the outside world: Outlook, the network, Jira/Confluence and SharePoint
-(installer concept, stages 4-7).
+"""The wizard stages that talk to the outside world: Outlook, the network, Jira/Confluence, SharePoint and
+the Teams bridge (installer concept, stages 4-7).
 
-Everything here is read-only towards Outlook, Jira, Confluence and SharePoint; the network stage sends
-nothing but plain GET requests and uses no credentials, the Atlassian stage sends GET requests only.
+Everything here is read-only towards Outlook, Jira, Confluence, SharePoint and the Teams bridge files; the
+network stage sends nothing but plain GET requests and uses no credentials, the Atlassian stage sends GET
+requests only.
 """
 
+import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -17,6 +19,7 @@ import sqlalchemy
 from ai_oil import secrets
 from ai_oil.connectors.atlassian import AtlassianClient, AtlassianError, system_certificate_session
 from ai_oil.connectors.outlook_session import ComOutlookSession, OutlookSession
+from ai_oil.connectors.teams import TeamsConnector
 from ai_oil.domain import people
 from ai_oil.errors import ConfigError, NotFoundError
 from ai_oil.governance import audit
@@ -25,6 +28,7 @@ from ai_oil.setup.model import SetupContext, StageResult
 from ai_oil.setup.probe import InternetSettings, SyncedLibrary
 from ai_oil.setup.stages_basic import _as_path
 from ai_oil.sources import registry
+from ai_oil.sources.model import ConnectorConfig
 
 _OUTLOOK_CONNECTOR_NAME = "Outlook"
 _DEFAULT_PROBE_URL = "https://api.atlassian.com/"
@@ -33,6 +37,11 @@ _DETAIL_CHECKS = (("mailbox", "Mailbox"), ("inbox", "Inbox"), ("sent", "Sent"))
 _JIRA_CONNECTOR_NAME = "Jira"
 _CONFLUENCE_CONNECTOR_NAME = "Confluence"
 _SHAREPOINT_CONNECTOR_NAME = "SharePoint"
+_TEAMS_CONNECTOR_NAME = "Teams"
+_TEAMS_FOLDER_NAME = "AI_OIL-Teams"
+_TEAMS_OPEN_ITEM = (
+    "Teams: set up the bridge with docs/teams_bridge_setup.md, then run `oil setup --only teams`"
+)
 _TOKEN_PAGE = "https://id.atlassian.com/manage-profile/security/api-tokens"
 _AUTH_FAILED = "authentication failed"
 _LIST_LIMIT = 30
@@ -814,3 +823,108 @@ class SharePointStage:
             and isinstance(item.get("url"), str)
             and isinstance(item.get("path"), str)
         ]
+
+
+class TeamsStage:
+    name = "teams"
+    title = "Teams chats"
+
+    def __init__(
+        self, *, connector_factory: Callable[[ConnectorConfig], TeamsConnector] = TeamsConnector
+    ) -> None:
+        self._connector_factory = connector_factory
+
+    def run(self, ctx: SetupContext) -> StageResult:
+        console = ctx.console
+        with ctx.engine.connect() as conn:
+            rows = registry.list_connectors(conn, type_name="teams")
+        row = rows[0] if rows else None
+        found, default = self._candidates(ctx, row)
+        if not found:
+            return StageResult("skipped", ["No Teams bridge folder found"], [_TEAMS_OPEN_ITEM])
+
+        if len(found) == 1:
+            folder = _as_path(
+                console.ask("Teams bridge folder", default=str(found[0]), validate=self._validate_folder)
+            )
+        else:
+            folder = found[
+                console.choose(
+                    "Which folder holds the Teams bridge files?",
+                    [str(item) for item in found],
+                    default=default,
+                )
+            ]
+
+        settings = {**(row.settings if row is not None else {}), "folder": str(folder)}
+        name = row.name if row is not None else _TEAMS_CONNECTOR_NAME
+        checks = (
+            self._connector_factory(
+                ConnectorConfig(row.id if row is not None else 0, "teams", name, True, settings, None)
+            )
+            .check()
+            .checks
+        )
+        for check in checks:
+            console.say(f"[{'ok' if check.ok else '!!'}] {check.name}: {check.detail}")
+        file_checks = [check for check in checks if check.name.startswith("file ")]
+        if not any(check.ok for check in file_checks):
+            console.say(f"No Teams bridge file with a valid table was found in {folder}.")
+            console.say("Section 1 of docs/teams_bridge_setup.md describes the Excel file and its table.")
+            if not console.confirm("Create the connector anyway?", default=False):
+                return StageResult("skipped", [], [_TEAMS_OPEN_ITEM])
+
+        with ctx.engine.begin() as conn:
+            if row is None:
+                row = registry.create_connector(conn, "teams", name, settings=settings)
+                action, credential = "connector.create", "none"
+            else:
+                row = registry.update_settings(conn, row.id, settings)
+                action, credential = "connector.update", "unchanged"
+            registry.instantiate(row)
+            audit.log(
+                conn,
+                action,
+                "B",
+                actor_type="user",
+                target=row.name,
+                detail={"type": "teams", "settings": row.settings, "credential": credential},
+            )
+        newest = next(
+            (check.detail for check in checks if check.name == "newest message"), "none captured yet"
+        )
+        count = len(file_checks)
+        return StageResult(
+            "done",
+            [f"Teams bridge: {folder} — {count} file{'' if count == 1 else 's'}, newest message {newest}"],
+        )
+
+    @staticmethod
+    def _validate_folder(text: str) -> str | None:
+        if not text:
+            return "Enter a folder."
+        folder = _as_path(text)
+        return None if folder.is_dir() else f"{folder} is not an existing folder."
+
+    @staticmethod
+    def _candidates(ctx: SetupContext, row: registry.ConnectorRow | None) -> tuple[list[Path], int]:
+        """The existing `AI_OIL-Teams` folders worth offering, and the index of the configured one (or 0)."""
+        folders: list[Path] = []
+        documents = ctx.probe.documents_folder()
+        if documents is not None:
+            folders.append(documents / _TEAMS_FOLDER_NAME)
+        for root in ctx.probe.onedrive_roots():
+            folders += [root / _TEAMS_FOLDER_NAME, root / "Documents" / _TEAMS_FOLDER_NAME]
+        configured = row.settings.get("folder") if row is not None else None
+        if isinstance(configured, str) and configured.strip():
+            folders.append(_as_path(configured))
+
+        def key(folder: Path) -> str:
+            return os.path.normcase(os.path.normpath(str(folder)))
+
+        found: dict[str, Path] = {}
+        for folder in folders:
+            if folder.is_dir():
+                found.setdefault(key(folder), folder)
+        wanted = key(_as_path(configured)) if isinstance(configured, str) and configured.strip() else None
+        return list(found.values()), list(found).index(wanted) if wanted in found else 0

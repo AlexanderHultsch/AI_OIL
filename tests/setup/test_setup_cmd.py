@@ -51,7 +51,7 @@ def scripted(monkeypatch: pytest.MonkeyPatch, make_console, probe) -> Callable[[
 
 def test_list_prints_name_and_title_per_stage(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["setup", "--list"]) == 0
-    assert len(wizard.STAGES) == 8
+    assert len(wizard.STAGES) == 9
     assert capsys.readouterr().out.splitlines() == [
         "data  Data folder",
         "me  About you",
@@ -60,6 +60,7 @@ def test_list_prints_name_and_title_per_stage(capsys: pytest.CaptureFixture[str]
         "network  Network",
         "atlassian  Jira and Confluence",
         "sharepoint  SharePoint and OneDrive files",
+        "teams  Teams chats",
         "finish  Finish",
     ]
 
@@ -85,7 +86,7 @@ def test_only_with_an_unknown_stage_is_an_error(
     assert main(["--home", str(initialised_home), "setup", "--only", "nope"]) == 1
     expected = (
         "error: unknown stage 'nope'; "
-        "stages: data, me, backup, outlook, network, atlassian, sharepoint, finish"
+        "stages: data, me, backup, outlook, network, atlassian, sharepoint, teams, finish"
     )
     assert expected in capsys.readouterr().err
 

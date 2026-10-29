@@ -38,7 +38,17 @@ def register(subparsers) -> None:
         help="link an Outlook conversation found by subject",
     )
     link.add_argument(
-        "--pick", type=int, default=None, metavar="N", help="with --outlook-subject: hit number"
+        "--teams-search",
+        default=None,
+        metavar="TEXT",
+        help="link a captured Teams conversation found by name, participant or text",
+    )
+    link.add_argument(
+        "--pick",
+        type=int,
+        default=None,
+        metavar="N",
+        help="with --outlook-subject or --teams-search: hit number",
     )
     link.set_defaults(func=run_link)
 
@@ -96,12 +106,13 @@ def _select_outlook_selected(conn: sqlalchemy.Connection, args: argparse.Namespa
     return link_service.select_outlook_selected(conn, connector=args.connector)
 
 
-def _select_outlook_subject(
-    conn: sqlalchemy.Connection, args: argparse.Namespace
+def _pick_candidate(
+    row: registry.ConnectorRow,
+    connector: object,
+    candidates: list,
+    args: argparse.Namespace,
+    describe: Callable[[int, object], str],
 ) -> link_service.Selection | None:
-    row, connector, candidates = link_service.outlook_candidates(
-        conn, args.outlook_subject, connector=args.connector
-    )
     if args.pick is not None:
         if args.pick > len(candidates):
             raise ValidationError(
@@ -113,9 +124,27 @@ def _select_outlook_subject(
     else:
         print("Several conversations match; re-run with --pick N:")
         for number, candidate in enumerate(candidates, start=1):
-            print(link_service.describe_candidate(number, candidate))
+            print(describe(number, candidate))
         return None
     return link_service.Selection(row, connector, chosen.ref)
+
+
+def _select_outlook_subject(
+    conn: sqlalchemy.Connection, args: argparse.Namespace
+) -> link_service.Selection | None:
+    row, connector, candidates = link_service.outlook_candidates(
+        conn, args.outlook_subject, connector=args.connector
+    )
+    return _pick_candidate(row, connector, candidates, args, link_service.describe_candidate)
+
+
+def _select_teams_search(
+    conn: sqlalchemy.Connection, args: argparse.Namespace
+) -> link_service.Selection | None:
+    row, connector, candidates = link_service.teams_candidates(
+        conn, args.teams_search, connector=args.connector
+    )
+    return _pick_candidate(row, connector, candidates, args, link_service.describe_teams_candidate)
 
 
 def _link_source(args: argparse.Namespace, select: Selector) -> int:
@@ -144,19 +173,30 @@ def _link_source(args: argparse.Namespace, select: Selector) -> int:
 
 def run_link(args: argparse.Namespace) -> int:
     note_args = args.title is not None or args.text is not None
-    modes = [args.reference is not None, note_args, args.outlook_selected, args.outlook_subject is not None]
+    modes = [
+        args.reference is not None,
+        note_args,
+        args.outlook_selected,
+        args.outlook_subject is not None,
+        args.teams_search is not None,
+    ]
     if sum(modes) != 1 or (note_args and (args.title is None or args.text is None)):
         raise ValidationError(
-            "give a reference, or --title and --text for a note, or --outlook-selected, or --outlook-subject"
+            "give a reference, or --title and --text for a note, or --outlook-selected, or --outlook-subject,"
+            " or --teams-search"
         )
-    if args.pick is not None and (args.outlook_subject is None or args.pick < 1):
-        raise ValidationError("--pick needs --outlook-subject and a number of 1 or more")
+    if args.pick is not None and (
+        (args.outlook_subject is None and args.teams_search is None) or args.pick < 1
+    ):
+        raise ValidationError("--pick needs --outlook-subject or --teams-search and a number of 1 or more")
     if note_args:
         return _link_note(args)
     if args.outlook_selected:
         return _link_source(args, _select_outlook_selected)
     if args.outlook_subject is not None:
         return _link_source(args, _select_outlook_subject)
+    if args.teams_search is not None:
+        return _link_source(args, _select_teams_search)
     return _link_source(args, _select_reference)
 
 

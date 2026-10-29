@@ -143,7 +143,7 @@ def test_no_connectors_gives_a_line_and_an_open_item(
     assert result.status == "done"
     assert "No connectors configured" in result.lines
     assert result.open_items == [
-        "Connectors: run `oil setup` again to add Outlook, Jira, Confluence or SharePoint"
+        "Connectors: run `oil setup` again to add Outlook, Jira, Confluence, SharePoint or Teams"
     ]
 
 
